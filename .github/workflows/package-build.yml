@@ -1,0 +1,32 @@
+name: Build RetroVault packages
+
+on:
+  push:
+    paths:
+      - ".package-build/READY"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebuild installable ZIP packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .package-build/core/*.b64 | base64 -d > retrovault-core.zip
+          cat .package-build/theme/*.b64 | base64 -d > retrovault-theme.zip
+          unzip -tq retrovault-core.zip
+          unzip -tq retrovault-theme.zip
+          rm -rf .package-build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add retrovault-core.zip retrovault-theme.zip
+          git add -u .package-build
+          git commit -m "Add installable RetroVault 1.5.0 packages"
+          git push
