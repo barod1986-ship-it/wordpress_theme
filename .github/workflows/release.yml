@@ -1,0 +1,90 @@
+name: Release packages
+
+# يبني ملفَي التثبيت retrovault-core.zip و retrovault-theme.zip من الكود مباشرة.
+# - أي دفع أو طلب دمج يمس الإضافة أو القالب: فحص صياغة PHP وJS وتطابق أرقام الإصدار وبناء الملفين.
+# - على الفرع الافتراضي: إن لم يوجد Release بنفس رقم الإصدار يُنشأ واحد والملفان مرفقان به.
+
+on:
+  push:
+    paths:
+      - 'retrovault/**'
+      - 'retrovault-core/**'
+      - '.github/workflows/release.yml'
+  pull_request:
+    paths:
+      - 'retrovault/**'
+      - 'retrovault-core/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check PHP and JS syntax
+        run: |
+          set -euo pipefail
+          php -v | head -n 1
+          find retrovault retrovault-core -name '*.php' -print0 | xargs -0 -n 1 php -l > /dev/null
+          find retrovault retrovault-core -name '*.js' -print0 | xargs -0 -n 1 node --check
+
+      - name: Check versions match
+        id: version
+        run: |
+          set -euo pipefail
+          header=$(grep -m 1 -oP '^\s*\*\s*Version:\s*\K\S+' retrovault-core/retrovault-core.php || true)
+          constant=$(grep -m 1 -oP "RETROVAULT_VERSION',\s*'\K[^']+" retrovault-core/retrovault-core.php || true)
+          theme=$(grep -m 1 -oP '^Version:\s*\K\S+' retrovault/style.css || true)
+          echo "plugin header: $header | RETROVAULT_VERSION: $constant | theme: $theme"
+          if [ -z "$header" ] || [ "$header" != "$constant" ] || [ "$header" != "$theme" ]; then
+            echo "::error::Version numbers differ: plugin header=$header, RETROVAULT_VERSION=$constant, style.css=$theme"
+            exit 1
+          fi
+          echo "version=$header" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip files
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip -rqX dist/retrovault-core.zip retrovault-core -x '*.DS_Store' '*Thumbs.db' '*.log'
+          zip -rqX dist/retrovault-theme.zip retrovault -x '*.DS_Store' '*Thumbs.db' '*.log'
+          unzip -tq dist/retrovault-core.zip
+          unzip -tq dist/retrovault-theme.zip
+          unzip -l dist/retrovault-core.zip | grep -q ' retrovault-core/retrovault-core.php$'
+          unzip -l dist/retrovault-theme.zip | grep -q ' retrovault/style.css$'
+          ls -l dist
+
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "::notice::Release $tag already exists. Bump the version to publish a new one."
+            exit 0
+          fi
+          gh release create "$tag" dist/retrovault-core.zip dist/retrovault-theme.zip \
+            --target "$GITHUB_SHA" --title "RetroVault $VERSION" --notes-file - <<'EOF'
+          ## ملفات التثبيت
+
+          | الملف | طريقة التثبيت |
+          |---|---|
+          | `retrovault-core.zip` | **الإضافات ← أضف جديد ← رفع إضافة**، ثم فعّلها (قبل القالب). |
+          | `retrovault-theme.zip` | **المظهر ← القوالب ← أضف جديد ← رفع قالب**، ثم فعّله. |
+
+          للتحديث من إصدار سابق: ارفع الملف بنفس الطريقة واختر «استبدال الحالي بالمرفوع». ترقية البيانات تتم تلقائياً.
+
+          لا تستخدم ملفات «Source code» ولا زر «Code ← Download ZIP»: ووردبريس لا يقبلها.
+          EOF

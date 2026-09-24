@@ -1,0 +1,19 @@
+/* RetroVault — تنسيق أساسي للمشغّل (يُستخدم فقط إن لم يعلن القالب دعمه add_theme_support('retrovault')) */
+.rv-player { --rv-ratio: 4/3; margin: 0 0 1.5rem; }
+.rv-player__screen { position: relative; aspect-ratio: var(--rv-ratio); width: min(100%, calc(78vh * var(--rv-ratio))); margin-inline: auto; background: #000; overflow: hidden; border-radius: 8px; }
+.rv-player__start { position: absolute; inset: 0; display: grid; place-content: center; gap: .75rem; width: 100%; padding: 0; border: 0; background: #000; color: #fff; cursor: pointer; font: inherit; }
+.rv-player__poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; }
+.rv-player__poster.is-pixel { image-rendering: pixelated; }
+.rv-player__cta, .rv-player__hint { position: relative; }
+.rv-player__cta { display: inline-flex; align-items: center; gap: .5rem; padding: .7em 1.4em; border-radius: 999px; background: var(--rv-sys, #d63a3a); font-weight: 700; }
+.rv-player__hint { font-size: .85rem; opacity: .85; }
+.rv-player__resume { position: absolute; z-index: 2; inset-inline: 12px; bottom: 12px; display: flex; align-items: center; justify-content: center; gap: .5rem; padding: .6em 1em; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .75); color: #fff; font: inherit; cursor: pointer; }
+.rv-player__resume small { display: block; opacity: .8; }
+.rv-player__frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.rv-player__notice { position: absolute; inset: 0; display: grid; place-content: center; margin: 0; color: #ddd; text-align: center; }
+.rv-player__bar { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; margin-top: .75rem; }
+.rv-player__btn { display: inline-flex; align-items: center; gap: .35rem; padding: .4em .9em; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-decoration: none; cursor: pointer; }
+.rv-player__btn[hidden] { display: none; }
+.rv-player__screen:fullscreen { width: 100%; height: 100%; border-radius: 0; }
+body.rv-theater .rv-player__screen { width: min(100%, calc(88vh * var(--rv-ratio))); }
+@media (max-width: 640px) { .rv-player__screen { aspect-ratio: auto; height: min(78vh, 560px); width: 100%; } }
