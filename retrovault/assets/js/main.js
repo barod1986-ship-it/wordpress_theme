@@ -209,8 +209,32 @@
 		var gameId = box.getAttribute('data-game');
 		var msg = $('[data-rating-msg]', box);
 		var clearBtn = $('[data-rating-clear]', box);
+		var bars = $$('[data-rating-bar]', box);
+		var mine = Number(box.getAttribute('data-user')) || 0;
 		var timer = 0;
 		var busy = false;
+
+		/* توزيع التقييمات: ينقل تقييم العضو من شريط درجته السابقة إلى الجديدة */
+		var renderBars = function (user) {
+			if (!bars.length) { return; }
+			user = Number(user) || 0;
+			var total = 0;
+			bars.forEach(function (bar) {
+				var stars = Number(bar.getAttribute('data-rating-bar'));
+				var n = Number(bar.getAttribute('data-n')) + (stars === user ? 1 : 0) - (stars === mine ? 1 : 0);
+				n = Math.max(0, n);
+				bar.setAttribute('data-n', String(n));
+				total += n;
+			});
+			bars.forEach(function (bar) {
+				var n = Number(bar.getAttribute('data-n'));
+				bar.style.setProperty('--share', (total ? n / total * 100 : 0) + '%');
+				var label = $('[data-rating-n]', bar);
+				if (label) { label.textContent = String(n); }
+			});
+			bars[0].parentNode.hidden = total === 0;
+			mine = user;
+		};
 
 		var render = function (data) {
 			$$('[data-rating-avg]').forEach(function (el) {
@@ -225,6 +249,7 @@
 			$$('input[name="rv-rating"]', box).forEach(function (input) {
 				input.checked = Number(input.value) === Number(data.user);
 			});
+			renderBars(data.user);
 			if (clearBtn) { clearBtn.hidden = !data.user; }
 		};
 
