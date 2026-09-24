@@ -545,9 +545,10 @@ final class Analytics {
 		header( 'Content-Disposition: attachment; filename="retrovault-stats-' . $days . 'd-' . wp_date( 'Y-m-d' ) . '.csv"' );
 		$out = fopen( 'php://output', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
 		fwrite( $out, "\xEF\xBB\xBF" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
-		fputcsv( $out, array( 'id', __( 'اللعبة', 'retrovault-core' ), __( 'النظام', 'retrovault-core' ), __( 'اللعب (الفترة)', 'retrovault-core' ), __( 'اللعب (الإجمالي)', 'retrovault-core' ), __( 'التقييم', 'retrovault-core' ), __( 'عدد التقييمات', 'retrovault-core' ), __( 'المتابعون', 'retrovault-core' ), __( 'تعليقات (الفترة)', 'retrovault-core' ), __( 'تنزيلات (الفترة)', 'retrovault-core' ) ) );
+		// حرف الهروب الفارغ = CSV قياسي (RFC 4180)، وتمريره صراحةً يتجنب تحذير PHP 8.4.
+		fputcsv( $out, array( 'id', __( 'اللعبة', 'retrovault-core' ), __( 'النظام', 'retrovault-core' ), __( 'اللعب (الفترة)', 'retrovault-core' ), __( 'اللعب (الإجمالي)', 'retrovault-core' ), __( 'التقييم', 'retrovault-core' ), __( 'عدد التقييمات', 'retrovault-core' ), __( 'المتابعون', 'retrovault-core' ), __( 'تعليقات (الفترة)', 'retrovault-core' ), __( 'تنزيلات (الفترة)', 'retrovault-core' ) ), ',', '"', '' );
 		foreach ( self::per_game( $days ) as $r ) {
-			fputcsv( $out, array( $r['id'], $r['title'], $r['system'], $r['plays'], $r['total'], $r['rating'], $r['votes'], $r['followers'], $r['comments'], $r['downloads'] ) );
+			fputcsv( $out, array( $r['id'], $r['title'], $r['system'], $r['plays'], $r['total'], $r['rating'], $r['votes'], $r['followers'], $r['comments'], $r['downloads'] ), ',', '"', '' );
 		}
 		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
 		exit;
