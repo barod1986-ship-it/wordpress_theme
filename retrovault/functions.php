@@ -120,13 +120,26 @@ function rvt_asset_version( $path ) {
 	return file_exists( $file ) ? RVT_VERSION . '.' . filemtime( $file ) : RVT_VERSION;
 }
 
-/* خط النصوص العربية العادي يظهر في كل صفحة: تحميله مبكراً يمنع وميض الخط البديل. */
+/*
+ * خطوط أعلى كل صفحة تُطلب مع رأس الصفحة بدل انتظار ملفات CSS، فتصل قبل أول رسم غالباً. بدونها تظهر
+ * الصفحة لحظةً بخط الجهاز (أعرض) ثم تنكمش عند وصول الخط فتتحرك القائمة والأزرار ويُعاد لفّ النص.
+ * كل أوزان النص الثلاثة بالعربية واللاتينية (اللاتينية فيها الأرقام والرموز، ومنها يُحسب عرض ch في
+ * max-width)، وHandjet لنصوص الشاشات. بعد أوراق الأنماط (الأولوية 9) لتُطلب CSS أولاً.
+ */
 add_action(
 	'wp_head',
 	static function () {
-		printf( '<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n", esc_url( get_theme_file_uri( 'assets/fonts/ibm-plex-sans-arabic-arabic-400.woff2' ) ) );
+		$fonts = array( 'handjet-arabic', 'handjet-latin' );
+		foreach ( array( 'arabic', 'latin' ) as $subset ) {
+			foreach ( array( 400, 500, 700 ) as $weight ) {
+				$fonts[] = "ibm-plex-sans-arabic-{$subset}-{$weight}";
+			}
+		}
+		foreach ( $fonts as $font ) {
+			printf( '<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n", esc_url( get_theme_file_uri( 'assets/fonts/' . $font . '.woff2' ) ) );
+		}
 	},
-	1
+	9
 );
 
 add_filter(
