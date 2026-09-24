@@ -98,6 +98,9 @@ function rvt_assets() {
 				'delConfirm'  => __( 'حذف كل حفظات الحالة لهذه اللعبة من حسابك؟ حفظ اللعبة الداخلي لا يُحذف.', 'retrovault' ),
 				'delSlot'     => __( 'حذف هذا الحفظ من حسابك؟ لا يمكن التراجع عن ذلك.', 'retrovault' ),
 				'delDone'     => __( 'حُذف الحفظ.', 'retrovault' ),
+				'posting'     => __( 'جارٍ النشر…', 'retrovault' ),
+				'posted'      => __( 'نُشر تعليقك.', 'retrovault' ),
+				'pending'     => __( 'وصل تعليقك، ويظهر للجميع بعد المراجعة.', 'retrovault' ),
 			),
 		)
 	);
@@ -174,6 +177,22 @@ add_action(
 );
 add_filter( 'login_headerurl', static function () { return home_url( '/' ); } );
 add_filter( 'login_headertext', static function () { return get_bloginfo( 'name' ); } );
+
+/*
+ * نشر التعليق بدون إعادة تحميل (main.js): رقم التعليق الجديد يُضاف لعنوان العودة، لأن fetch لا يرى
+ * ما بعد # فيه. الإرسال العادي لا يتأثر.
+ */
+add_filter(
+	'comment_post_redirect',
+	static function ( $location, $comment ) {
+		if ( ! empty( $_POST['rvt_ajax'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- علامة فقط؛ ووردبريس تحقق من التعليق ونشره قبل هذا.
+			$location = add_query_arg( 'rvt_new', (int) $comment->comment_ID, $location );
+		}
+		return $location;
+	},
+	99,
+	2
+);
 
 /**
  * زر «رد» في المحتوى الذي تعليقاته للأعضاء فقط يقود الزائر لتسجيل الدخول.
