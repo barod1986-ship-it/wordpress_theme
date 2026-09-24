@@ -225,8 +225,8 @@ final class Notifier {
 			$heading = $game['title'];
 			/* translators: 1: version, 2: game */
 			$intro   = sprintf( __( 'نزل الإصدار %1$s من «%2$s»، وهي في مفضلتك.', 'retrovault-core' ), $job['version'], $game['title'] );
-			// أول أربعة أسطر من سجل التحديثات، كل سطر كما كتبته.
-			$lines   = array_filter( array_map( 'trim', preg_split( '/\R/', wp_strip_all_tags( $game['changelog'] ) ) ) );
+			// أول أربعة أسطر من سجل التحديثات، كل سطر كما كتبته. (/u ضروري: بدونه يُقطع النص العربي داخل الحرف «م».)
+			$lines   = array_filter( array_map( 'trim', (array) preg_split( '/\R/u', wp_strip_all_tags( $game['changelog'] ) ) ) );
 			$details = implode( "\n", array_map( static function ( $line ) { return wp_html_excerpt( $line, 140, '…' ); }, array_slice( $lines, 0, 4 ) ) );
 			$label   = __( 'ما الجديد', 'retrovault-core' );
 			$cta     = __( 'العب الآن', 'retrovault-core' );
