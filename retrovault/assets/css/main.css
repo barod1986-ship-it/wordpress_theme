@@ -24,6 +24,7 @@
 	--cart-depth: rgba(38, 35, 45, .2);
 	--ink: #25232b;
 	--ink-soft: #4e4b57;
+	--ink-on-lo: #45424e;
 	--link: #2e46a6;
 	--key: #eeedf1;
 	--star-off: rgba(38, 35, 45, .22);
@@ -72,12 +73,13 @@
 		--cart-depth: rgba(0, 0, 0, .55);
 		--ink: #ecebf0;
 		--ink-soft: #b4b1bd;
+		--ink-on-lo: #b4b1bd;
 		--link: #9fb0ff;
 		--key: #3a3942;
 		--star-off: rgba(255, 255, 255, .16);
 
 		--bezel: #121115;
-		--a-red: #d9434b;
+		--a-red: #d23d45;
 		--b-yellow: #f2b632;
 		--c-green: #2a8452;
 		--d-blue: #7d93ff;
@@ -3139,7 +3141,7 @@ img.is-pixel {
 	padding-block: 40px 28px;
 	border-top: 1px solid var(--seam);
 	background: var(--plastic-lo);
-	color: var(--ink-soft);
+	color: var(--ink-on-lo);
 	font-size: var(--fs-14);
 }
 

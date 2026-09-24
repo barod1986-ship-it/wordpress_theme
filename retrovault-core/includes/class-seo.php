@@ -30,7 +30,7 @@ final class Seo {
 			return;
 		}
 		$post        = get_post( $game['id'] );
-		$description = wp_strip_all_tags( has_excerpt( $post ) ? get_the_excerpt( $post ) : wp_trim_words( $post->post_content, 30, '…' ) );
+		$description = wp_strip_all_tags( has_excerpt( $post ) ? get_the_excerpt( $post ) : wp_trim_words( strip_shortcodes( $post->post_content ), 30, '…' ) );
 		$image       = $game['cover_id'] ? wp_get_attachment_image_url( $game['cover_id'], 'large' ) : '';
 
 		$schema = array(

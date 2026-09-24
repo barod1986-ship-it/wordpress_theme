@@ -9,6 +9,9 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
+// ذاكرة مؤقتة لا بيانات: تُحذف دائماً.
+delete_site_transient( 'retrovault_github_release' );
+
 $retrovault_settings = get_option( 'retrovault_settings', array() );
 if ( empty( $retrovault_settings['delete_data'] ) ) {
 	return;

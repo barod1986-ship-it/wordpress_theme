@@ -22,7 +22,7 @@ $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->
 			<p class="account-head__meta">
 				<?php
 				/* translators: %s: registration date */
-				echo esc_html( sprintf( __( 'عضو منذ %s', 'retrovault' ), date_i18n( get_option( 'date_format' ), strtotime( $rvt_user->user_registered ) ) ) );
+				echo esc_html( sprintf( __( 'عضو منذ %s', 'retrovault' ), wp_date( get_option( 'date_format' ), strtotime( $rvt_user->user_registered . ' UTC' ) ) ) );
 				?>
 			</p>
 		</div>
@@ -218,7 +218,7 @@ $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->
 					<li class="my-ratings__item">
 						<a class="my-ratings__title" href="<?php echo esc_url( get_permalink( $rvt_rating['game_id'] ) . '#rate' ); ?>"><?php echo esc_html( get_the_title( $rvt_rating['game_id'] ) ); ?></a>
 						<?php echo rvt_stars( $rvt_rating['rating'], array( 'size' => 'sm' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-						<time class="my-ratings__date" datetime="<?php echo esc_attr( gmdate( 'c', $rvt_rating['time'] ) ); ?>"><?php echo esc_html( date_i18n( get_option( 'date_format' ), $rvt_rating['time'] ) ); ?></time>
+						<time class="my-ratings__date" datetime="<?php echo esc_attr( gmdate( 'c', $rvt_rating['time'] ) ); ?>"><?php echo esc_html( wp_date( get_option( 'date_format' ), $rvt_rating['time'] ) ); ?></time>
 					</li>
 				<?php endforeach; ?>
 			</ol>

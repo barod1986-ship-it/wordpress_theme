@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RVT_VERSION', '1.5.1' );
+define( 'RVT_VERSION', '1.6.0' );
 
 require_once get_template_directory() . '/inc/icons.php';
 require_once get_template_directory() . '/inc/customizer.php';
@@ -60,7 +60,7 @@ add_action( 'wp_enqueue_scripts', 'rvt_assets' );
 function rvt_assets() {
 	global $wp_locale;
 
-	wp_enqueue_style( 'rvt-fonts', rvt_fonts_url(), array(), null ); // phpcs:ignore WordPress.WP.EnqueuedResourceVersion.MissingVersion
+	wp_enqueue_style( 'rvt-fonts', rvt_fonts_url(), array(), rvt_asset_version( 'assets/fonts/fonts.css' ) );
 	wp_enqueue_style( 'rvt-main', get_theme_file_uri( 'assets/css/main.css' ), array( 'rvt-fonts' ), rvt_asset_version( 'assets/css/main.css' ) );
 
 	wp_enqueue_script(
@@ -107,9 +107,9 @@ function rvt_assets() {
 	}
 }
 
-/** خطوط Google: Handjet (بكسل، للشاشات فقط) + IBM Plex Sans Arabic (كل ما عداها). */
+/** الخطوط مستضافة مع القالب: Handjet (بكسل، للشاشات فقط) + IBM Plex Sans Arabic (كل ما عداها). */
 function rvt_fonts_url() {
-	return 'https://fonts.googleapis.com/css2?family=Handjet:wght@400;600;800&family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap';
+	return get_theme_file_uri( 'assets/fonts/fonts.css' );
 }
 
 /**
@@ -120,20 +120,13 @@ function rvt_asset_version( $path ) {
 	return file_exists( $file ) ? RVT_VERSION . '.' . filemtime( $file ) : RVT_VERSION;
 }
 
-add_filter(
-	'wp_resource_hints',
-	static function ( $urls, $relation ) {
-		if ( 'preconnect' === $relation ) {
-			$urls[] = 'https://fonts.googleapis.com';
-			$urls[] = array(
-				'href' => 'https://fonts.gstatic.com',
-				'crossorigin',
-			);
-		}
-		return $urls;
+/* خط النصوص العربية العادي يظهر في كل صفحة: تحميله مبكراً يمنع وميض الخط البديل. */
+add_action(
+	'wp_head',
+	static function () {
+		printf( '<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n", esc_url( get_theme_file_uri( 'assets/fonts/ibm-plex-sans-arabic-arabic-400.woff2' ) ) );
 	},
-	10,
-	2
+	1
 );
 
 add_filter(
@@ -162,7 +155,7 @@ add_action(
 add_action(
 	'login_enqueue_scripts',
 	static function () {
-		wp_enqueue_style( 'rvt-fonts', rvt_fonts_url(), array(), null ); // phpcs:ignore WordPress.WP.EnqueuedResourceVersion.MissingVersion
+		wp_enqueue_style( 'rvt-fonts', rvt_fonts_url(), array(), rvt_asset_version( 'assets/fonts/fonts.css' ) );
 		wp_enqueue_style( 'rvt-login', get_theme_file_uri( 'assets/css/login.css' ), array( 'rvt-fonts' ), rvt_asset_version( 'assets/css/login.css' ) );
 	}
 );

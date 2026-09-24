@@ -290,6 +290,8 @@ li a{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12
 				'sw'    => self::url( 'sw' ),
 				'scope' => self::scope(),
 				'cache' => self::OFFLINE_CACHE,
+				// بصمة الحساب الحالي (لا تكشف رقمه): عند تغيّرها تُحذف الصفحات المحفوظة للحساب السابق.
+				'user'  => is_user_logged_in() ? substr( wp_hash( 'rv-pwa|' . get_current_user_id() ), 0, 12 ) : '',
 			)
 		);
 	}
