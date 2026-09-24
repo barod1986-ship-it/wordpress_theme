@@ -1,0 +1,42 @@
+# ملفات النظام والمحررات
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.log
+node_modules/
+
+# ملفات التثبيت المضغوطة تُرفع في صفحة Releases وليس في الكود
+*.zip
+
+# ملفات الألعاب (ROM) لا تُرفع للمستودع العام أبداً؛ مكانها موقعك فقط
+*.nes
+*.fds
+*.sfc
+*.smc
+*.gb
+*.gbc
+*.gba
+*.n64
+*.z64
+*.v64
+*.nds
+*.gen
+*.smd
+*.sms
+*.gg
+*.pce
+*.a26
+*.a78
+*.lnx
+*.ngp
+*.ngc
+*.ws
+*.wsc
+*.vb
+*.cue
+*.chd
+*.pbp
+*.iso
+*.7z
