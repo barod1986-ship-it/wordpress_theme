@@ -2495,6 +2495,39 @@ img.is-pixel {
 	margin: 12px 0 0;
 }
 
+/* «جارٍ النشر…» أو سبب الرفض عند النشر دون إعادة تحميل */
+.comment-form__status {
+	margin: 10px 0 0;
+	color: var(--ink-soft);
+	font-size: var(--fs-14);
+}
+
+.comment-form__status:empty {
+	display: none;
+}
+
+.comment-form__status.is-error {
+	padding-inline-start: 10px;
+	border-inline-start: 3px solid var(--a-red);
+	color: var(--ink);
+}
+
+/* التعليق المنشور للتو يضيء لحظة بلون النظام */
+.comment-list .is-new > .comment-body {
+	border-radius: 10px;
+	animation: rvt-new-comment 2.4s ease-out;
+}
+
+@keyframes rvt-new-comment {
+	from {
+		background-color: color-mix(in srgb, var(--sys, var(--d-blue)) 22%, transparent);
+	}
+
+	to {
+		background-color: transparent;
+	}
+}
+
 .comments__closed {
 	color: var(--ink-soft);
 }

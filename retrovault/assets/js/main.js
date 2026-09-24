@@ -379,6 +379,78 @@
 			.then(function () { box.disabled = false; });
 	});
 
+	/* ---------- نشر التعليق دون إعادة تحميل الصفحة ----------
+	 * الإرسال العادي يعيد تحميل الصفحة فتظهر من أعلاها ثم تقفز إلى التعليق الجديد. هنا يُرسل النموذج
+	 * نفسه في الخلفية ويُستبدل قسم التعليقات بنسخته الجديدة، فيبقى القارئ مكانه ويرى رده في موضعه.
+	 * زر «رد» يعمل بعدها تلقائياً (comment-reply.js يراقب الصفحة). أي رد غير متوقع يعود للسلوك العادي. */
+	document.addEventListener('submit', function (e) {
+		var form = e.target;
+		var section = document.getElementById('comments');
+		if (form.id !== 'commentform' || e.defaultPrevented || !section || !section.contains(form) ||
+			!window.fetch || !window.DOMParser || !window.FormData || !window.URL) { return; }
+		e.preventDefault();
+		var submit = form.querySelector('[type="submit"]');
+		if (submit && submit.disabled) { return; }
+		var status = $('[data-comment-status]', form);
+		if (!status) {
+			status = document.createElement('p');
+			status.className = 'comment-form__status';
+			status.setAttribute('data-comment-status', '');
+			status.setAttribute('role', 'status');
+			form.appendChild(status);
+		}
+		status.classList.remove('is-error');
+		status.textContent = i18n.posting || '';
+		if (submit) { submit.disabled = true; }
+		var data = new FormData(form);
+		data.append('rvt_ajax', '1');
+
+		fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' })
+			.then(function (res) {
+				return res.text().then(function (html) {
+					return { res: res, doc: new DOMParser().parseFromString(html, 'text/html') };
+				});
+			})
+			.then(function (r) {
+				if (!r.res.ok || !r.res.redirected) {
+					/* رسالة ووردبريس (تعليق مكرر، سريع جداً، فارغ...). بلا إعادة توجيه = لم يُنشر. */
+					var die = r.res.ok ? null : (r.doc.querySelector('.wp-die-message') || r.doc.body);
+					throw new Error((die && die.textContent.trim()) || i18n.error);
+				}
+				var url = new URL(r.res.url);
+				var id = url.searchParams.get('rvt_new');
+				url.searchParams.delete('rvt_new');
+				var fresh = r.doc.getElementById('comments');
+				if (!id || !fresh || !fresh.querySelector('#comment-' + id)) {
+					/* نُشر التعليق لكن الصفحة المعادة غير معتادة (إضافة غيّرت العنوان مثلاً): انتقل إليها. */
+					window.location.assign(url.toString() + (id ? '#comment-' + id : ''));
+					return;
+				}
+				section.replaceWith(fresh);
+				history.replaceState(history.state, '', url.pathname + url.search + '#comment-' + id);
+				var added = document.getElementById('comment-' + id);
+				var body = $('.comment-body', added) || added;
+				added.classList.add('is-new');
+				body.setAttribute('tabindex', '-1');
+				body.focus({ preventScroll: true });
+				var box = body.getBoundingClientRect();
+				if (box.top < 90 || box.bottom > window.innerHeight) {
+					var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+					body.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+				}
+				toast($('.comment-awaiting', added) ? i18n.pending : i18n.posted);
+			})
+			.catch(function (err) {
+				/* bdi: رسائل ووردبريس قد تكون بالإنجليزية، فتبقى علامات ترقيمها في مكانها داخل الصفحة العربية */
+				var text = document.createElement('bdi');
+				text.textContent = (err && err.message) || i18n.error;
+				status.textContent = '';
+				status.appendChild(text);
+				status.classList.add('is-error');
+				if (submit) { submit.disabled = false; }
+			});
+	});
+
 	/* ---------- المشاركة ---------- */
 	document.addEventListener('click', function (e) {
 		var btn = e.target.closest('[data-share]');

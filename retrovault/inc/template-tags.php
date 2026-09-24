@@ -522,14 +522,18 @@ function rvt_comment( $comment, $args, $depth ) {
 				<?php endif; ?>
 				<div class="comment-content"><?php comment_text(); ?></div>
 				<?php
+				// نصوص الرد من القالب، فتبقى عربية حتى لو لم تُثبَّت ترجمة ووردبريس (مثل «Reply to» في عنوان النموذج).
 				comment_reply_link(
 					array_merge(
 						$args,
 						array(
-							'depth'     => $depth,
-							'max_depth' => $args['max_depth'],
-							'before'    => '<div class="comment-reply">',
-							'after'     => '</div>',
+							'depth'         => $depth,
+							'max_depth'     => $args['max_depth'],
+							'before'        => '<div class="comment-reply">',
+							'after'         => '</div>',
+							'reply_text'    => __( 'رد', 'retrovault' ),
+							/* translators: %s: comment author */
+							'reply_to_text' => __( 'رد على %s', 'retrovault' ),
 						)
 					)
 				);
