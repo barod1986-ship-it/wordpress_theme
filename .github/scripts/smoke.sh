@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# اختبار تشغيل على ووردبريس حقيقي (Docker): يثبّت ملفَي dist/ (شغّل build.sh أولاً) مع محتوى
+# تجريبي، ثم يفتح صفحات الموقع ويجرّب واجهة REST كزائر وعضو ومدير.
+# يفشل عند أي صفحة برمز غير متوقع، أو أي خطأ أو تحذير PHP في سجل ووردبريس.
+#
+# الاستخدام: .github/scripts/smoke.sh [إصدار PHP، الافتراضي 8.4]
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+PHP_VERSION="${1:-8.4}"
+REGISTRY="${REGISTRY:-mirror.gcr.io/library}"
+PORT="${PORT:-8089}"
+BASE="http://localhost:${PORT}"
+NET=rv-smoke
+DB=rv-smoke-db
+WP=rv-smoke-wp
+CORE=rv-smoke-core
+TMP="$(mktemp -d)"
+FAILED=0
+
+cleanup() {
+	docker rm -f "$WP" "$DB" > /dev/null 2>&1 || true
+	docker volume rm "$CORE" > /dev/null 2>&1 || true
+	docker network rm "$NET" > /dev/null 2>&1 || true
+	rm -rf "$TMP"
+}
+trap cleanup EXIT
+cleanup
+mkdir -p "$TMP"
+
+wp() {
+	docker run --rm -i --network "$NET" --volumes-from "$WP" --user 33:33 -e HOME=/tmp \
+		-e WORDPRESS_DB_HOST="$DB" -e WORDPRESS_DB_USER=wp -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
+		"$REGISTRY/wordpress:cli" wp "$@"
+}
+
+fail() {
+	echo "::error::$*"
+	FAILED=1
+}
+
+echo "== WordPress + PHP ${PHP_VERSION}"
+docker network create "$NET" > /dev/null
+docker run -d --name "$DB" --network "$NET" -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=wp \
+	-e MARIADB_USER=wp -e MARIADB_PASSWORD=wp "$REGISTRY/mariadb:11" > /dev/null
+# أحدث ووردبريس من صورة PHP 8.4، ويعمل بإصدار PHP المطلوب (صورة PHP 7.4 تحمل ووردبريس قديماً).
+docker volume create "$CORE" > /dev/null
+docker run --rm -v "$CORE:/out" --entrypoint sh "$REGISTRY/wordpress:php8.4-apache" -c 'cp -a /usr/src/wordpress/. /out/ && chown -R 33:33 /out'
+docker run -d --name "$WP" --network "$NET" -p "${PORT}:80" \
+	-e WORDPRESS_DB_HOST="$DB" -e WORDPRESS_DB_USER=wp -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
+	-e WORDPRESS_DEBUG=1 \
+	-e WORDPRESS_CONFIG_EXTRA="define( 'WP_DEBUG_LOG', '/var/www/html/wp-content/debug.log' ); define( 'WP_DEBUG_DISPLAY', false );" \
+	-v "$CORE:/var/www/html" "$REGISTRY/wordpress:php${PHP_VERSION}-apache" > /dev/null
+
+for _ in $(seq 1 60); do
+	if docker exec "$DB" mariadb -uwp -pwp -e 'SELECT 1' wp > /dev/null 2>&1 && curl -s -o /dev/null "$BASE/"; then
+		break
+	fi
+	sleep 2
+done
+docker exec "$WP" php -v | head -n 1
+
+echo "== Install"
+wp core install --url="$BASE" --title=RetroVault --admin_user=admin --admin_password=admin \
+	--admin_email=admin@example.com --skip-email
+docker cp dist/retrovault-core.zip "$WP:/var/www/html/wp-content/retrovault-core.zip"
+docker cp dist/retrovault-theme.zip "$WP:/var/www/html/wp-content/retrovault-theme.zip"
+docker cp .github/scripts/seed.php "$WP:/var/www/html/wp-content/seed.php"
+docker exec "$WP" sh -c 'touch wp-content/debug.log && chown -R www-data:www-data wp-content'
+wp plugin install wp-content/retrovault-core.zip --activate
+wp theme install wp-content/retrovault-theme.zip --activate
+wp rewrite structure '/%postname%/'
+wp option update users_can_register 1
+wp eval-file wp-content/seed.php
+# كل ملفات PHP بإصدار PHP الموقع نفسه (بعضها لا يُحمَّل إلا في صفحات معينة).
+docker exec "$WP" sh -c 'for f in $(find wp-content/plugins/retrovault-core wp-content/themes/retrovault -name "*.php"); do php -l "$f" > /tmp/lint 2>&1 || { cat /tmp/lint; exit 1; }; done'
+GAME=$(wp post list --post_type=rv_game --name=pixel-quest --field=ID)
+docker exec -u www-data "$WP" sh -c ': > wp-content/debug.log'
+
+# expect <رمز متوقع> <المسار> [ملف الكوكيز]
+expect() {
+	local want="$1" path="$2" jar="${3:-}" code
+	if [ -n "$jar" ]; then
+		code=$(curl -s -b "$jar" -o "$TMP/body" -w '%{http_code}' "$BASE$path")
+	else
+		code=$(curl -s -o "$TMP/body" -w '%{http_code}' "$BASE$path")
+	fi
+	if [ "$code" != "$want" ]; then
+		fail "$path returned $code (expected $want)${jar:+ as $(basename "$jar" .jar)}"
+	elif grep -qiE 'There has been a critical error|Fatal error|Parse error' "$TMP/body"; then
+		fail "$path shows a PHP error${jar:+ as $(basename "$jar" .jar)}"
+	else
+		echo "ok $code $path${jar:+ ($(basename "$jar" .jar))}"
+	fi
+}
+
+login() {
+	curl -s -c "$TMP/$1.jar" -b 'wordpress_test_cookie=WP%20Cookie%20check' -o /dev/null \
+		--data-urlencode "log=$1" --data-urlencode "pwd=$1" -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php"
+}
+
+# rest <المسار> <اسم الحقل المتوقع في الرد> [وسائط curl...] (كعضو)
+rest() {
+	local path="$1" want="$2" out
+	shift 2
+	out=$(curl -s -b "$TMP/member.jar" -H "X-WP-Nonce: $NONCE" "$@" "$BASE/wp-json/retrovault/v1/$path")
+	if printf '%s' "$out" | grep -q "\"$want\""; then
+		echo "ok REST $path"
+	else
+		fail "REST $path: $out"
+	fi
+}
+
+echo "== Guest"
+expect 200 /
+expect 200 /games/
+expect 200 '/games/?sort=rating'
+expect 200 '/games/?sort=trending&players=multi&status=released'
+expect 200 '/games/?q=pixel'
+expect 200 /games/pixel-quest/
+expect 200 /games/pixel-quest/play/
+expect 302 /games/pixel-quest/download/
+expect 403 /games/star-racer/download/
+expect 200 /games/void-shooter/play/
+expect 200 /system/nes/
+expect 200 /genre/rpg/
+expect 200 '/?s=pixel'
+expect 200 /devlog/
+expect 200 /devlog-first-update/
+expect 302 /account/
+expect 404 /this-page-does-not-exist/
+expect 200 /wp-login.php
+expect 200 '/?rv_sw=1'
+expect 200 '/?rv_manifest=1'
+expect 200 '/?rv_offline=1'
+expect 302 '/?rv_random=1'
+expect 200 /feed/
+expect 200 "/wp-json/retrovault/v1/games/$GAME/rating"
+
+echo "== Member"
+login member
+expect 200 / "$TMP/member.jar"
+expect 200 /games/pixel-quest/ "$TMP/member.jar"
+expect 200 /games/pixel-quest/play/ "$TMP/member.jar"
+NONCE=$(grep -oE '"nonce":"[a-f0-9]+"' "$TMP/body" | head -n 1 | cut -d'"' -f4 || true)
+head -c 4096 /dev/urandom > "$TMP/state.bin"
+printf 'sram' > "$TMP/sram.bin"
+rest "games/$GAME/rating" average -X POST -d rating=4
+rest "games/$GAME/favorite" favorite -X POST
+rest "games/$GAME/save" slot -F "state=@$TMP/state.bin" -F core=fceumm
+rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123
+rest me/notify email -H 'Content-Type: application/json' -d '{"email":true}'
+expect 200 /account/ "$TMP/member.jar"
+expect 302 /wp-admin/ "$TMP/member.jar"
+
+echo "== Admin"
+login admin
+for path in /wp-admin/ '/wp-admin/edit.php?post_type=rv_game' '/wp-admin/post-new.php?post_type=rv_game' \
+	"/wp-admin/post.php?post=$GAME&action=edit" '/wp-admin/edit-tags.php?taxonomy=rv_system&post_type=rv_game' \
+	'/wp-admin/edit.php?post_type=rv_game&page=retrovault-settings' \
+	'/wp-admin/edit.php?post_type=rv_game&page=retrovault-stats&period=365' \
+	/wp-admin/plugins.php /wp-admin/themes.php /wp-admin/customize.php \
+	'/wp-admin/edit.php?post_type=rv_game&page=retrovault-stats'; do
+	expect 200 "$path" "$TMP/admin.jar"
+done
+# آخر صفحة فُتحت هي صفحة الإحصائيات: منها رابط التصدير.
+export_url=$(grep -oE 'href="[^"]*rv_export=csv[^"]*"' "$TMP/body" | head -n 1 | sed -e 's/^href="//' -e 's/"$//' -e 's/&amp;/\&/g' -e 's/&#038;/\&/g' || true)
+if [ -n "$export_url" ] && curl -s -b "$TMP/admin.jar" -D "$TMP/headers" -o "$TMP/export.csv" "$export_url" && grep -qi '^content-type: text/csv' "$TMP/headers"; then
+	echo "ok CSV export ($(wc -l < "$TMP/export.csv") lines)"
+else
+	fail "CSV export did not return a CSV file"
+fi
+
+echo "== PHP log"
+# سطور الاتصال بـ wordpress.org لا تخص الإضافة (بيئات بلا إنترنت).
+log=$(docker exec "$WP" cat wp-content/debug.log | grep -v -i 'wordpress\.org' || true)
+if [ -n "$log" ]; then
+	echo "$log"
+	fail "PHP notices, warnings or errors were logged (see above)"
+else
+	echo "ok no PHP notices, warnings or errors"
+fi
+
+exit "$FAILED"
