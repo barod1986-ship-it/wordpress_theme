@@ -329,6 +329,11 @@ final class Game_Meta {
 							if ( $rom['size'] ) {
 								echo ' <span>' . esc_html( size_format( $rom['size'] ) ) . '</span>';
 							}
+							echo ' <span class="rv-rom-lock' . ( $rom['protected'] ? '' : ' is-off' ) . '">' . esc_html(
+								$rom['protected']
+									? __( '— محمي: لا يُفتح إلا داخل المشغّل', 'retrovault-core' )
+									: __( '— غير محمي بعد: يُحمى عند حفظ اللعبة', 'retrovault-core' )
+							) . '</span>';
 						}
 						?>
 					</div>
@@ -341,7 +346,7 @@ final class Game_Meta {
 					<?php esc_html_e( '— ويُقبل ملف ‎.zip أيضاً. لألعاب PS1 استخدم ‎.chd أو ‎.pbp أو ملف zip يضم ‎.cue و‎.bin (أو ملف PS-EXE مضغوطاً في zip).', 'retrovault-core' ); ?>
 				</p>
 				<p>
-					<label for="rv-rom-url"><?php esc_html_e( 'أو رابط مباشر للملف (للملفات الكبيرة المرفوعة عبر FTP):', 'retrovault-core' ); ?></label>
+					<label for="rv-rom-url"><?php esc_html_e( 'أو رابط مباشر للملف (للملفات الكبيرة المرفوعة عبر FTP). الرابط المباشر لا يُحمى من التنزيل:', 'retrovault-core' ); ?></label>
 					<input type="url" class="large-text code" id="rv-rom-url" name="rv[rom_url]" value="<?php echo esc_attr( $v['rom_url'] ); ?>" placeholder="https://">
 				</p>
 				<p>

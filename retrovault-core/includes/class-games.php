@@ -259,15 +259,18 @@ final class Games {
 	 * @return array
 	 */
 	public static function rom( $post_id, $meta ) {
-		$raw  = '';
-		$file = '';
-		$size = 0;
-		$stamp = '';
+		$raw       = '';
+		$file      = '';
+		$size      = 0;
+		$stamp     = '';
+		$protected = false;
 
 		if ( $meta['rom_id'] ) {
-			$raw  = (string) wp_get_attachment_url( $meta['rom_id'] );
-			$path = get_attached_file( $meta['rom_id'] );
-			$file = $path ? wp_basename( $path ) : '';
+			$raw       = (string) wp_get_attachment_url( $meta['rom_id'] );
+			$path      = get_attached_file( $meta['rom_id'] );
+			$protected = $path && Roms::is_protected_path( $path ) && file_exists( $path );
+			// الاسم الأصلي، لا الاسم العشوائي للملف المحمي.
+			$file = $path ? Roms::name( $meta['rom_id'], $path ) : '';
 			$md   = wp_get_attachment_metadata( $meta['rom_id'] );
 			if ( is_array( $md ) && ! empty( $md['filesize'] ) ) {
 				$size = (int) $md['filesize'];
@@ -282,16 +285,22 @@ final class Games {
 		}
 
 		$url = '';
+		$ver = '';
 		if ( '' !== $raw ) {
-			$url = add_query_arg( 'v', substr( md5( $raw . '|' . $size . '|' . $stamp . '|' . $meta['version'] ), 0, 10 ), $raw );
+			$ver = substr( md5( $raw . '|' . $size . '|' . $stamp . '|' . $meta['version'] ), 0, 10 );
+			$url = add_query_arg( 'v', $ver, $raw );
 		}
 
 		return array(
-			'url'     => $url,
-			'raw_url' => $raw,
-			'file'    => $file,
-			'ext'     => strtolower( (string) pathinfo( $file, PATHINFO_EXTENSION ) ),
-			'size'    => $size,
+			'id'        => (int) $meta['rom_id'],
+			'url'       => $url,
+			'raw_url'   => $raw,
+			'file'      => $file,
+			'ext'       => strtolower( (string) pathinfo( $file, PATHINFO_EXTENSION ) ),
+			'size'      => $size,
+			'ver'       => $ver,
+			// محمي = في المجلد المغلق، فيصل للمشغّل برابط مؤقت فقط (Roms).
+			'protected' => $protected,
 		);
 	}
 

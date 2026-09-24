@@ -119,7 +119,7 @@ expect 200 '/games/?sort=trending&players=multi&status=released'
 expect 200 '/games/?q=pixel'
 expect 200 /games/pixel-quest/
 expect 200 /games/pixel-quest/play/
-expect 302 /games/pixel-quest/download/
+expect 200 /games/pixel-quest/download/
 expect 403 /games/star-racer/download/
 expect 200 /games/void-shooter/play/
 expect 200 /system/nes/
@@ -136,6 +136,36 @@ expect 200 '/?rv_offline=1'
 expect 302 '/?rv_random=1'
 expect 200 /feed/
 expect 200 "/wp-json/retrovault/v1/games/$GAME/rating"
+
+echo "== Game file protection"
+# status <وسائط curl...>: رمز الرد فقط. check <الوصف> <المتوقع> <الفعلي>.
+status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+check() {
+	if [ "$3" = "$2" ]; then echo "ok $2 $1"; else fail "$1 returned $3 (expected $2)"; fi
+}
+xhr=(-H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Dest: empty')
+rom=$(curl -s "$BASE/games/pixel-quest/play/" | grep -oE 'EJS_gameUrl = "[^"]+"' | sed -e 's/^EJS_gameUrl = "//' -e 's/"$//' -e 's#\\/#/#g' || true)
+file=$(wp eval "echo wp_get_attachment_url( (int) get_post_meta( $GAME, '_rv_rom_id', true ) );")
+case "$rom" in
+	"$BASE"/games/pixel-quest/rom/*) echo "ok player gets the protected link" ;;
+	*) fail "player does not get the protected link: $rom" ;;
+esac
+check "game file for the player" 200 "$(status "${xhr[@]}" "$rom")"
+check "game file size check (HEAD)" 200 "$(status -I "${xhr[@]}" "$rom")"
+check "game file opened in a browser tab" 403 "$(status -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
+check "game file requested by another site" 403 "$(status -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
+check "game file with a wrong token" 403 "$(status "${xhr[@]}" "$(printf '%s' "$rom" | sed -E 's#/rom/[0-9a-f]{32}/#/rom/00000000000000000000000000000000/#')")"
+check "game file at its direct address" 403 "$(status "$file")"
+if curl -s -D - -o /dev/null "$BASE/games/pixel-quest/download/" | grep -qi '^content-disposition: attachment'; then
+	echo "ok allowed download is sent as an attachment"
+else
+	fail "allowed download is not sent as an attachment"
+fi
+if curl -s "$BASE/wp-json/wp/v2/media?per_page=100" | grep -q 'retrovault-roms'; then
+	fail "game file is listed in the public media API"
+else
+	echo "ok game file is hidden from the public media API"
+fi
 
 echo "== Member"
 login member

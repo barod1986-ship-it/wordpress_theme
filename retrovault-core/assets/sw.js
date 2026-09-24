@@ -30,14 +30,29 @@
 		);
 	});
 
+	/* ملف اللعبة المحمي: /rom/{رمز}/{اسم} (أو ?rv_rom=رمز/اسم). الرمز يتغير كل بضع ساعات، فيُحفظ
+	 * الملف بمفتاح بلا رمز ليبقى متاحاً بدون إنترنت مهما قدم رمز الصفحة المحفوظة. */
+	var ROM_PATH = /\/rom\/[0-9a-f]{32}\//;
+	var ROM_QUERY = /([?&]rv_rom=)[0-9a-f]{32}/;
+
 	function isGameAsset(url) {
 		if (url.href.indexOf(C.dataPath) === 0) {
 			return true;
 		}
-		if (url.origin === self.location.origin && url.pathname.indexOf(C.uploads) === 0) {
+		if (url.origin !== self.location.origin) {
+			return false;
+		}
+		if (ROM_PATH.test(url.pathname) || ROM_QUERY.test(url.search)) {
+			return true;
+		}
+		if (url.pathname.indexOf(C.uploads) === 0) {
 			return C.romExt.indexOf(url.pathname.split('.').pop().toLowerCase()) !== -1;
 		}
 		return false;
+	}
+
+	function gameKey(href) {
+		return href.replace(ROM_PATH, '/rom/-/').replace(ROM_QUERY, '$1-');
 	}
 
 	function skipped(url) {
@@ -67,33 +82,45 @@
 	/* ملفات اللعبة */
 	function gameAsset(event) {
 		var req = event.request;
+		var key = gameKey(req.url);
+		/* بلا إنترنت، أو رابط انتهى رمزه (صفحة مفتوحة منذ ساعات): النسخة المحفوظة إن وُجدت */
+		function saved(cache, fallback, headOnly) {
+			return cache.match(key).then(function (hit) {
+				if (!hit) {
+					return fallback || Response.error();
+				}
+				return headOnly ? new Response(null, { status: 200, headers: hit.headers }) : hit;
+			});
+		}
 		return caches.open(GAMES).then(function (cache) {
 			if (req.method === 'HEAD') {
 				return fetch(req).then(function (res) {
+					if (!res.ok) {
+						return saved(cache, res, true);
+					}
 					/* EmulatorJS يتحقق بطلب HEAD ثم يستخدم نسخته المخزّنة دون تنزيل؛
 					 * نجلب الملف في الخلفية مرة واحدة ليبقى متاحاً بدون إنترنت. */
-					event.waitUntil(cache.match(req.url).then(function (hit) {
+					event.waitUntil(cache.match(key).then(function (hit) {
 						if (hit) {
 							return null;
 						}
 						return fetch(req.url).then(function (full) {
-							return cacheable(full) ? cache.put(req.url, full) : null;
+							return cacheable(full) ? cache.put(key, full) : null;
 						}).catch(function () {});
 					}));
 					return res;
 				}).catch(function () {
-					return cache.match(req.url).then(function (hit) {
-						return hit ? new Response(null, { status: 200, headers: hit.headers }) : Response.error();
-					});
+					return saved(cache, null, true);
 				});
 			}
 			return fetch(req).then(function (res) {
-				if (cacheable(res)) {
-					cache.put(req.url, res.clone());
+				if (!cacheable(res)) {
+					return saved(cache, res, false);
 				}
+				cache.put(key, res.clone());
 				return res;
 			}).catch(function () {
-				return cache.match(req.url).then(function (hit) { return hit || Response.error(); });
+				return saved(cache, null, false);
 			});
 		});
 	}

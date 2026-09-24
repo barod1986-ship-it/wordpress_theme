@@ -204,6 +204,9 @@ final class Settings {
 						<td>
 							<label><input type="checkbox" name="<?php echo esc_attr( $name ); ?>[downloads]" value="1" <?php checked( $o['downloads'], 1 ); ?>> <?php esc_html_e( 'السماح بزر «تنزيل الملف» للألعاب التي تفعّل له الخيار من صفحة اللعبة', 'retrovault-core' ); ?></label>
 							<p class="description"><?php esc_html_e( 'مفيد لمن يريد تشغيل لعبتك على الجهاز الأصلي عبر فلاش كارت. المفتاح هنا عام، والتفعيل الفعلي لكل لعبة على حدة.', 'retrovault-core' ); ?></p>
+							<p class="description"><?php esc_html_e( 'ملفات الألعاب المرفوعة محمية دائماً: تُحفظ في مجلد مغلق باسم عشوائي، ولا يصل إليها إلا المشغّل برابط مؤقت لا يعمل إن فُتح في المتصفح، ولا تظهر في مكتبة الوسائط العامة. زر التنزيل (إن سمحت به) يرسل الملف دون كشف مكانه. لا يمكن منع التنزيل كلياً لأن اللعبة تعمل داخل المتصفح، لكن الطرق السهلة مغلقة.', 'retrovault-core' ); ?></p>
+							<p class="description"><?php esc_html_e( 'على خوادم nginx (التي تتجاهل ملف ‎.htaccess) أضف هذه القاعدة لإغلاق المجلد تماماً:', 'retrovault-core' ); ?></p>
+							<p class="description"><code dir="ltr">location ^~ <?php echo esc_html( (string) wp_parse_url( trailingslashit( wp_upload_dir( null, false )['baseurl'] ) . Roms::DIR . '/', PHP_URL_PATH ) ); ?> { deny all; }</code></p>
 						</td>
 					</tr>
 					<tr>

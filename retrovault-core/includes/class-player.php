@@ -7,6 +7,7 @@
  * - صفحة اللعبة تعرض صورة وزر «ابدأ اللعب»؛ عند الضغط فقط يُنشأ iframe لتلك الصفحة.
  *   النتيجة: لا يُحمَّل المحاكي (عدة ميغابايت) إلا لمن يريد اللعب فعلاً، وأزرار الأسهم داخل
  *   اللعبة لا تحرّك الصفحة، ويمكن فتح المشغّل في نافذة كاملة على الجوال.
+ * - ملف اللعبة المرفوع يصل للمشغّل برابط مؤقت من /games/{slug}/rom/ فقط (Roms).
  *
  * @package RetroVault
  */
@@ -34,6 +35,10 @@ final class Player {
 		global $wp_query;
 		$vars = (array) $wp_query->query;
 
+		if ( array_key_exists( 'rv_rom', $vars ) ) {
+			Roms::serve( get_queried_object() );
+			exit;
+		}
 		if ( array_key_exists( 'rv_play', $vars ) ) {
 			self::render( get_queried_object() );
 			exit;
@@ -55,7 +60,7 @@ final class Player {
 		$config = array(
 			'EJS_player'          => '#rv-game',
 			'EJS_core'            => $game['core'],
-			'EJS_gameUrl'         => $game['rom']['url'],
+			'EJS_gameUrl'         => Roms::player_url( $game ),
 			'EJS_gameName'        => get_post_field( 'post_name', $game['id'] ),
 			'EJS_pathtodata'      => Settings::data_path(),
 			'EJS_color'           => (string) Settings::get( 'accent' ),
@@ -110,6 +115,11 @@ final class Player {
 		$dir       = is_rtl() ? 'rtl' : 'ltr';
 		$flags     = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 
+		// رابط ملف اللعبة مؤقت، فلا تحفظ إضافات التخزين المؤقت هذه الصفحة.
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		nocache_headers();
 		status_header( 200 );
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex, nofollow', true );
@@ -191,6 +201,8 @@ window.EJS_onGameStart = function () {
 		Stats::hit( $game['id'], '_rv_download_count' );
 		nocache_headers();
 		header( 'X-Robots-Tag: noindex, nofollow', true );
+		// الملف المحمي يُرسل مباشرة دون كشف مكانه؛ غيره (رابط خارجي) يُحوَّل إليه كالسابق.
+		Roms::download( $game );
 		wp_redirect( $game['rom']['raw_url'], 302 ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- رابط أدخله المدير (قد يكون على نطاق آخر).
 		exit;
 	}
