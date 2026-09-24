@@ -12,7 +12,7 @@ get_header();
 <div class="shell gameover">
 	<div class="tv">
 		<div class="tv__screen gameover__screen">
-			<p class="gameover__title"><?php esc_html_e( 'الصفحة غير موجودة', 'retrovault' ); ?></p>
+			<h1 class="gameover__title"><?php esc_html_e( 'الصفحة غير موجودة', 'retrovault' ); ?></h1>
 			<p class="gameover__continue">
 				<?php esc_html_e( 'متابعة؟', 'retrovault' ); ?>
 				<span class="gameover__count" data-countdown data-end="<?php esc_attr_e( 'انتهت اللعبة', 'retrovault' ); ?>">9</span>

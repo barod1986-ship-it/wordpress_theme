@@ -39,7 +39,7 @@ defined( 'ABSPATH' ) || exit;
 				);
 				?>
 			</nav>
-			<?php rvt_search_form( 'header-search' ); ?>
+			<?php rvt_search_form( 'header-search', __( 'البحث في الموقع', 'retrovault' ) ); ?>
 			<?php rvt_account_menu(); ?>
 		</div>
 	</div>

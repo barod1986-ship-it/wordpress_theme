@@ -104,8 +104,9 @@ function rvt_library_url() {
  * نموذج البحث: يبحث في الألعاب عبر صفحة المكتبة.
  *
  * @param string $class كلاس إضافي.
+ * @param string $label اسم النموذج لقارئ الشاشة (يلزم اسم مختلف لكل نموذج بحث في الصفحة نفسها).
  */
-function rvt_search_form( $class = '' ) {
+function rvt_search_form( $class = '', $label = '' ) {
 	static $n = 0;
 	++$n;
 	$core = rvt_has_core();
@@ -114,7 +115,7 @@ function rvt_search_form( $class = '' ) {
 	$value = $core ? ( isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '' ) : get_search_query();
 	list( $action, $hidden ) = rvt_form_action( rvt_library_url() );
 	?>
-	<form role="search" method="get" class="search-form <?php echo esc_attr( $class ); ?>" action="<?php echo esc_url( $action ); ?>">
+	<form role="search" aria-label="<?php echo esc_attr( '' !== $label ? $label : __( 'ابحث عن لعبة', 'retrovault' ) ); ?>" method="get" class="search-form <?php echo esc_attr( $class ); ?>" action="<?php echo esc_url( $action ); ?>">
 		<?php echo $hidden; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- مُهرَّب في rvt_form_action. ?>
 		<label class="screen-reader-text" for="search-<?php echo (int) $n; ?>"><?php esc_html_e( 'ابحث عن لعبة', 'retrovault' ); ?></label>
 		<input type="search" id="search-<?php echo (int) $n; ?>" class="input search-form__input" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" placeholder="<?php esc_attr_e( 'ابحث عن لعبة', 'retrovault' ); ?>">
