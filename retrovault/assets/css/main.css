@@ -1350,17 +1350,117 @@ p {
 
 /* ---------- صفحة اللعبة ---------- */
 
-.game-top {
+/* الترويسة: خرطوشة اللعبة، وبجانبها الاسم والوصف والأرقام والأزرار */
+.game-hero {
 	display: grid;
-	grid-template-areas: "stage head" "stage side";
-	grid-template-columns: minmax(0, 1fr) minmax(280px, 22rem);
-	grid-template-rows: auto 1fr;
-	gap: 20px 32px;
-	align-items: start;
+	grid-template-areas:
+		"cart head head"
+		"cart lede lede"
+		"cart facts actions";
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	grid-template-rows: auto auto 1fr;
+	gap: 10px 24px;
+	margin-bottom: 28px;
 }
 
-.game-head {
+.game-hero__cart {
+	grid-area: cart;
+	align-self: start;
+	width: 120px;
+}
+
+.game-hero__cart .cart__shell {
+	padding: 18px 8px 8px;
+}
+
+.game-hero__cart .cart__shell::before {
+	top: 6px;
+	left: 12px;
+	right: 26px;
+	height: 7px;
+}
+
+.game-hero__cart .cart__art--blank {
+	font-size: 2.2rem;
+}
+
+.game-hero__head {
 	grid-area: head;
+}
+
+.game-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.game-title {
+	margin: 0;
+	font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem);
+	line-height: 1.2;
+}
+
+.game-lede {
+	grid-area: lede;
+	max-width: 65ch;
+	margin: 0;
+	color: var(--ink-soft);
+}
+
+.game-facts {
+	display: flex;
+	grid-area: facts;
+	flex-wrap: wrap;
+	align-items: center;
+	align-self: end;
+	gap: 6px 22px;
+	margin: 0;
+	padding: 0;
+	color: var(--ink-soft);
+	font-size: var(--fs-14);
+	list-style: none;
+}
+
+.game-facts li {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.game-score {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.game-score strong {
+	font-size: var(--fs-18);
+}
+
+.game-score:hover span {
+	text-decoration: underline;
+}
+
+.game-actions {
+	display: flex;
+	grid-area: actions;
+	flex-wrap: wrap;
+	align-self: end;
+	gap: 8px;
+}
+
+/* المشغّل وتحته التحكم، والجانب يمتد بطول المشغّل والمحتوى فلا تبقى فجوة تحت المشغّل */
+.game-layout {
+	display: grid;
+	grid-template-areas: "stage side" "main side";
+	grid-template-columns: minmax(0, 1fr) minmax(280px, 20rem);
+	grid-template-rows: auto 1fr;
+	gap: 44px 32px;
+	align-items: start;
 }
 
 .game-stage {
@@ -1373,36 +1473,8 @@ p {
 	gap: 16px;
 }
 
-.game-badges {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin-bottom: 12px;
-}
-
-.game-title {
-	margin: 0 0 8px;
-	font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem);
-	line-height: 1.2;
-}
-
-.game-lede {
-	margin: 0 0 12px;
-	color: var(--ink-soft);
-}
-
-.game-score {
-	display: inline-flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
-	color: var(--ink);
-	font-size: var(--fs-14);
-	text-decoration: none;
-}
-
-.game-score strong {
-	font-size: var(--fs-18);
+.game-main {
+	grid-area: main;
 }
 
 .game-stage__tip {
@@ -1412,14 +1484,70 @@ p {
 }
 
 @media (max-width: 1000px) {
-	.game-top {
-		grid-template-areas: "head" "stage" "side";
+	.game-hero {
+		grid-template-areas:
+			"cart head"
+			"cart lede"
+			"cart facts"
+			"cart actions";
+		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-rows: auto auto auto 1fr;
+	}
+
+	.game-actions {
+		margin-top: 6px;
+	}
+
+	.game-layout {
+		grid-template-areas: "stage" "side" "main";
 		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto;
+		row-gap: 32px;
 	}
 
 	.game-side {
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 		align-items: start;
+	}
+}
+
+@media (max-width: 640px) {
+	.game-hero {
+		grid-template-areas:
+			"cart head"
+			"lede lede"
+			"facts facts"
+			"actions actions";
+		grid-template-rows: auto;
+		gap: 12px 16px;
+		margin-bottom: 22px;
+	}
+
+	.game-hero__cart {
+		width: 76px;
+	}
+
+	.game-hero__cart .cart__shell {
+		padding: 14px 6px 6px;
+	}
+
+	.game-hero__cart .cart__shell::before {
+		top: 4px;
+		left: 10px;
+		right: 20px;
+		height: 6px;
+	}
+
+	.game-hero__cart .cart__art--blank {
+		font-size: 1.5rem;
+	}
+
+	.game-hero__head {
+		align-self: center;
+	}
+
+	.game-actions {
+		margin-top: 0;
 	}
 }
 
@@ -1612,17 +1740,38 @@ body.rv-theater .game-stage {
 	z-index: 46;
 }
 
-body.rv-theater .game-top {
-	grid-template-areas: "stage" "head" "side";
+body.rv-theater .game-layout {
+	grid-template-areas: "stage" "side" "main";
 	grid-template-columns: minmax(0, 1fr);
+}
+
+body.rv-theater .game-side {
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
 body.rv-theater .rv-player__screen {
 	width: min(100%, calc(86vh * var(--rv-ratio, 4/3)));
 }
 
-body.rv-theater .game-stage__tip {
+body.rv-theater .game-stage__tip,
+body.rv-theater .game-keys .keymap dt,
+body.rv-theater .game-keys__pad {
 	color: #bdbcc6;
+}
+
+body.rv-theater .game-stage__tip a,
+body.rv-theater .game-keys a {
+	color: #9fb0ff;
+}
+
+body.rv-theater .game-keys {
+	background: #1e1d23;
+	color: #e9e8ee;
+	box-shadow: inset 0 0 0 1px #3b3a43;
+}
+
+body.rv-theater .game-keys__pad {
+	border-top-color: #3b3a43;
 }
 
 @media (max-width: 640px) {
@@ -1635,6 +1784,11 @@ body.rv-theater .game-stage__tip {
 		width: 100%;
 		height: min(76vh, 580px);
 		aspect-ratio: auto;
+	}
+
+	/* الشاشة تملأ العرض أصلاً، فلا فائدة من العرض الواسع */
+	.rv-player__btn[data-rv-action="theater"] {
+		display: none;
 	}
 }
 
@@ -1696,27 +1850,87 @@ body.rv-theater .game-stage__tip {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 12px;
+	gap: 14px 18px;
+	padding-bottom: 16px;
+	border-bottom: 1px dashed var(--seam);
 }
 
-.rate__numbers {
-	display: flex;
-	align-items: baseline;
-	gap: 8px;
+.rate__score {
+	display: grid;
+	justify-items: center;
+	gap: 6px;
+	min-width: 6.5rem;
 	margin: 0;
+	text-align: center;
 }
 
-.rate__numbers strong {
-	font-size: var(--fs-24);
+.rate__avg {
+	font-size: 2.5rem;
+	line-height: 1;
 }
 
-.rate__numbers span {
+.rate__count {
 	color: var(--ink-soft);
 	font-size: var(--fs-14);
+	line-height: 1.3;
+}
+
+/* توزيع التقييمات: خمسة أشرطة صفراء على خلفية داكنة مثل مؤشر شاشة */
+.rate__bars {
+	display: grid;
+	flex: 1 1 9rem;
+	gap: 2px;
+	margin: 0;
+	padding: 0;
+	font-size: var(--fs-14);
+	list-style: none;
+}
+
+.rate__bar {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) 2.5ch;
+	align-items: center;
+	gap: 8px;
+	line-height: 1.6;
+}
+
+.rate__bar-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	font-weight: 700;
+}
+
+.rate__bar-label .rvt-icon {
+	color: var(--b-yellow);
+	font-size: .8em;
+}
+
+.rate__bar-track {
+	position: relative;
+	height: 8px;
+	overflow: hidden;
+	border-radius: 2px;
+	background: var(--bezel);
+}
+
+.rate__bar-track::before {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: 0;
+	width: var(--share, 0%);
+	background: var(--b-yellow);
+	content: "";
+}
+
+.rate__bar-n {
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
+	text-align: end;
 }
 
 .rate__input {
-	margin: 16px 0 0;
+	margin: 14px 0 0;
 	padding: 0;
 	border: 0;
 }
@@ -1803,15 +2017,22 @@ body.rv-theater .game-stage__tip {
 	font-size: var(--fs-14);
 }
 
+/* ورقة المواصفات: صف لكل خاصية بخط متقطع بينها */
 .specs {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
-	gap: 8px 16px;
-	margin: 0 0 16px;
+	margin: 0;
+}
+
+.specs dt,
+.specs dd {
+	padding-block: 7px;
+	border-bottom: 1px dashed var(--groove);
 }
 
 .specs dt {
-	padding-top: 2px;
+	padding-top: 9px;
+	padding-inline-end: 16px;
 	color: var(--ink-soft);
 	font-size: var(--fs-14);
 }
@@ -1821,33 +2042,18 @@ body.rv-theater .game-stage__tip {
 	font-weight: 500;
 }
 
-.game-actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	padding-top: 14px;
-	border-top: 1px dashed var(--seam);
-}
-
-.game-body {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(280px, 22rem);
-	gap: 32px;
-	align-items: start;
-	margin-top: 44px;
-}
-
-.game-aside {
-	position: sticky;
-	top: 84px;
-}
-
-.admin-bar .game-aside {
-	top: 116px;
+.specs dt:last-of-type,
+.specs dd:last-of-type {
+	padding-bottom: 0;
+	border-bottom: 0;
 }
 
 .game-section {
 	margin-bottom: 40px;
+}
+
+.game-main > .game-section:last-child {
+	margin-bottom: 0;
 }
 
 .game-section__title {
@@ -1855,35 +2061,38 @@ body.rv-theater .game-stage__tip {
 	font-size: var(--fs-24);
 }
 
-@media (max-width: 1000px) {
-	.game-body {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.game-aside {
-		position: static;
-	}
+/* التحكم تحت المشغّل مباشرة */
+.game-keys {
+	margin-top: 16px;
 }
 
-/* جدول التحكم */
-.keys {
-	width: 100%;
-	border-collapse: collapse;
+.keymap {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 24px;
+	margin: 0;
+}
+
+.keymap__item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.keymap dt {
 	font-size: var(--fs-14);
-}
-
-.keys th,
-.keys td {
-	padding: 7px 0;
-	border-bottom: 1px dashed var(--groove);
-	text-align: start;
-	vertical-align: middle;
-}
-
-.keys th {
-	width: 42%;
-	padding-inline-end: 12px;
 	font-weight: 700;
+}
+
+.keymap dd {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0;
+}
+
+.keymap kbd {
+	margin: 0;
 }
 
 kbd {
@@ -1902,20 +2111,30 @@ kbd {
 	unicode-bidi: isolate;
 }
 
-.keys__notes {
+.game-keys__notes {
 	margin-top: 12px;
 	font-size: var(--fs-14);
 }
 
-.keys__note {
+.game-keys__notes p {
+	margin: 0 0 .5em;
+}
+
+.game-keys__notes p:last-child {
+	margin-bottom: 0;
+}
+
+.game-keys__pad {
 	display: flex;
 	gap: 10px;
 	margin: 14px 0 0;
+	padding-top: 12px;
+	border-top: 1px dashed var(--seam);
 	color: var(--ink-soft);
 	font-size: var(--fs-14);
 }
 
-.keys__note .rvt-icon {
+.game-keys__pad .rvt-icon {
 	margin-top: 4px;
 	font-size: 1.1rem;
 }
@@ -1923,22 +2142,26 @@ kbd {
 /* اللقطات */
 .shots {
 	display: grid;
-	grid-auto-columns: minmax(220px, 300px);
-	grid-auto-flow: column;
+	grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
 	gap: 14px;
-	margin-inline: -4px;
-	padding: 4px 4px 12px;
-	overflow-x: auto;
-	scroll-snap-type: x proximity;
-	scrollbar-width: thin;
 }
 
 .shot {
 	display: block;
-	padding: 8px;
-	border-radius: 12px;
+	padding: 6px;
+	border-radius: 10px;
 	background: var(--bezel);
-	scroll-snap-align: start;
+}
+
+.shot:hover {
+	box-shadow: 0 0 0 3px var(--sys, var(--d-blue));
+}
+
+@media (max-width: 640px) {
+	.shots {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+	}
 }
 
 .shot img {
@@ -2792,11 +3015,6 @@ img.is-pixel {
 	gap: 16px;
 }
 
-.log-list {
-	display: grid;
-	gap: 12px;
-}
-
 .log-card {
 	display: grid;
 	gap: 14px;
@@ -2937,6 +3155,39 @@ img.is-pixel {
 	.timeline .log-card {
 		grid-template-columns: minmax(0, 1fr);
 	}
+}
+
+/* نسخة مختصرة (صفحة اللعبة): بلا بطاقات، والنقاط بلون نظام اللعبة */
+.timeline--compact {
+	gap: 16px;
+	padding-inline-start: 26px;
+}
+
+.timeline--compact::before {
+	inset-block: 8px;
+	inset-inline-start: 6px;
+}
+
+.timeline--compact .timeline__item::before {
+	top: 7px;
+	inset-inline-start: -24px;
+	width: 11px;
+	height: 11px;
+}
+
+.timeline--compact .log-card {
+	grid-template-columns: minmax(0, 1fr);
+	padding: 0;
+	background: none;
+	box-shadow: none;
+}
+
+.timeline--compact .log-card__body {
+	gap: 2px;
+}
+
+.timeline--compact .log-card__title {
+	font-size: var(--fs-18);
 }
 
 .post-games {

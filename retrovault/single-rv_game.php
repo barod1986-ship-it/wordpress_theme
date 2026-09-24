@@ -1,6 +1,7 @@
 <?php
 /**
- * صفحة اللعبة.
+ * صفحة اللعبة: ترويسة بعرض الصفحة، ثم المشغّل وتحته أزرار التحكم، وبجانبه التقييم والتفاصيل،
+ * ثم الوصف واللقطات وبقية الأقسام تحت المشغّل.
  *
  * @package RetroVault
  */
@@ -16,16 +17,41 @@ while ( have_posts() ) :
 		continue;
 	}
 	$rvt_sys      = $rvt_game['system'];
+	$rvt_color    = $rvt_sys ? $rvt_sys['color'] : '#5a5864';
 	$rvt_controls = ( $rvt_sys && $rvt_sys['key'] ) ? rv_get_controls( $rvt_sys['key'] ) : array();
 	$rvt_rating   = $rvt_game['rating'];
-	$rvt_style    = sprintf( '--sys:%1$s;--rv-ratio:%2$s', $rvt_sys ? $rvt_sys['color'] : '#5a5864', $rvt_sys ? $rvt_sys['ratio'] : '4/3' );
+	$rvt_style    = sprintf( '--sys:%1$s;--rv-ratio:%2$s', $rvt_color, $rvt_sys ? $rvt_sys['ratio'] : '4/3' );
 	?>
 	<article id="post-<?php the_ID(); ?>" <?php post_class( 'game' ); ?> style="<?php echo esc_attr( $rvt_style ); ?>">
 		<div class="shell">
 			<?php rvt_breadcrumbs(); ?>
 
-			<div class="game-top">
-				<header class="game-head">
+			<header class="game-hero">
+				<div class="cart game-hero__cart" style="--sys:<?php echo esc_attr( $rvt_color ); ?>" aria-hidden="true">
+					<div class="cart__shell">
+						<div class="cart__label">
+							<?php
+							if ( $rvt_game['cover_id'] ) {
+								echo rvt_image( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+									$rvt_game['cover_id'],
+									'rvt-cover',
+									array(
+										'class'         => 'cart__art',
+										'alt'           => '',
+										// صورة المشغّل هي الأكبر في الشاشة، فلا تأخذ الخرطوشة الصغيرة أولويتها.
+										'fetchpriority' => 'auto',
+									),
+									'(max-width: 640px) 88px, 120px'
+								);
+							} else {
+								echo '<div class="cart__art cart__art--blank"><span>' . esc_html( $rvt_sys ? $rvt_sys['short'] : '?' ) . '</span></div>';
+							}
+							?>
+						</div>
+					</div>
+				</div>
+
+				<div class="game-hero__head">
 					<div class="game-badges">
 						<?php
 						echo rvt_system_chip( $rvt_sys ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
@@ -45,19 +71,84 @@ while ( have_posts() ) :
 						?>
 					</div>
 					<h1 class="game-title"><?php the_title(); ?></h1>
-					<?php if ( ! empty( $rvt_game['lede'] ) ) : ?>
-						<p class="game-lede"><?php echo esc_html( $rvt_game['lede'] ); ?></p>
-					<?php endif; ?>
-					<a class="game-score" href="#rate">
-						<?php echo rvt_stars( $rvt_rating['average'], array( 'live' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-						<strong data-rating-avg><?php echo $rvt_rating['count'] ? esc_html( number_format_i18n( $rvt_rating['average'], 1 ) ) : '—'; ?></strong>
-						<span data-rating-count><?php echo esc_html( rvt_count( $rvt_rating['count'], 'ratings' ) ); ?></span>
-					</a>
-				</header>
+				</div>
 
+				<?php if ( ! empty( $rvt_game['lede'] ) ) : ?>
+					<p class="game-lede"><?php echo esc_html( $rvt_game['lede'] ); ?></p>
+				<?php endif; ?>
+
+				<ul class="game-facts">
+					<li>
+						<a class="game-score" href="#rate">
+							<?php echo rvt_stars( $rvt_rating['average'], array( 'live' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+							<strong data-rating-avg><?php echo $rvt_rating['count'] ? esc_html( number_format_i18n( $rvt_rating['average'], 1 ) ) : '—'; ?></strong>
+							<span data-rating-count><?php echo esc_html( rvt_count( $rvt_rating['count'], 'ratings' ) ); ?></span>
+						</a>
+					</li>
+					<li>
+						<?php
+						echo rvt_icon( 'play' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo esc_html(
+							$rvt_game['plays']
+								/* translators: %s: play count, e.g. "5 مرات" */
+								? sprintf( __( 'لُعبت %s', 'retrovault' ), rvt_count( $rvt_game['plays'], 'plays' ) )
+								: rvt_count( 0, 'plays' )
+						);
+						?>
+					</li>
+				</ul>
+
+				<div class="game-actions">
+					<?php rvt_favorite_button( $rvt_game ); ?>
+					<button type="button" class="btn btn--ghost btn--sm" data-share data-title="<?php echo esc_attr( $rvt_game['title'] ); ?>" data-url="<?php echo esc_url( $rvt_game['url'] ); ?>">
+						<?php echo rvt_icon( 'share' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+						<?php esc_html_e( 'مشاركة', 'retrovault' ); ?>
+					</button>
+					<?php if ( $rvt_game['downloadable'] ) : ?>
+						<a class="btn btn--pill btn--sm" href="<?php echo esc_url( $rvt_game['download_url'] ); ?>" rel="nofollow">
+							<?php echo rvt_icon( 'download' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+							<?php
+							esc_html_e( 'تنزيل الملف', 'retrovault' );
+							if ( $rvt_game['rom']['ext'] ) {
+								echo ' <bdi dir="ltr">.' . esc_html( $rvt_game['rom']['ext'] ) . '</bdi>';
+							}
+							?>
+						</a>
+					<?php endif; ?>
+				</div>
+			</header>
+
+			<div class="game-layout">
 				<div class="game-stage">
 					<?php rv_player(); ?>
-					<p class="game-stage__tip"><?php rvt_stage_tip( $rvt_game ); ?></p>
+					<?php if ( $rvt_game['playable'] ) : ?>
+						<p class="game-stage__tip"><?php rvt_stage_tip( $rvt_game ); ?></p>
+
+						<section class="panel game-keys" id="controls" aria-labelledby="controls-title">
+							<h2 class="panel__title" id="controls-title"><?php esc_html_e( 'التحكم بلوحة المفاتيح', 'retrovault' ); ?></h2>
+							<?php if ( $rvt_controls ) : ?>
+								<dl class="keymap">
+									<?php foreach ( $rvt_controls as $rvt_row ) : ?>
+										<div class="keymap__item">
+											<dt><?php echo esc_html( $rvt_row['label'] ); ?></dt>
+											<dd>
+												<?php foreach ( $rvt_row['keys'] as $rvt_key ) : ?>
+													<kbd><?php echo esc_html( $rvt_key ); ?></kbd>
+												<?php endforeach; ?>
+											</dd>
+										</div>
+									<?php endforeach; ?>
+								</dl>
+							<?php endif; ?>
+							<?php if ( $rvt_game['controls'] ) : ?>
+								<div class="game-keys__notes"><?php echo wp_kses_post( wpautop( $rvt_game['controls'] ) ); ?></div>
+							<?php endif; ?>
+							<p class="game-keys__pad">
+								<?php echo rvt_icon( 'pad' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+								<span><?php esc_html_e( 'يد التحكم تعمل تلقائياً عند توصيلها، وعلى الجوال تظهر أزرار لمس. لتغيير الأزرار افتح إعدادات التحكم من شريط المحاكي.', 'retrovault' ); ?></span>
+							</p>
+						</section>
+					<?php endif; ?>
 				</div>
 
 				<aside class="game-side">
@@ -94,8 +185,6 @@ while ( have_posts() ) :
 								<dt><?php esc_html_e( 'اللغات', 'retrovault' ); ?></dt>
 								<dd><?php echo esc_html( $rvt_game['languages'] ); ?></dd>
 							<?php endif; ?>
-							<dt><?php esc_html_e( 'مرات اللعب', 'retrovault' ); ?></dt>
-							<dd><?php echo esc_html( rvt_count( $rvt_game['plays'], 'plays' ) ); ?></dd>
 							<dt><?php esc_html_e( 'آخر تحديث', 'retrovault' ); ?></dt>
 							<dd><bdi><time datetime="<?php echo esc_attr( get_the_modified_date( 'c' ) ); ?>"><?php echo esc_html( get_the_modified_date() ); ?></time></bdi></dd>
 							<?php if ( $rvt_game['rom']['size'] ) : ?>
@@ -103,29 +192,9 @@ while ( have_posts() ) :
 								<dd><bdi><?php echo esc_html( size_format( $rvt_game['rom']['size'], 1 ) ); ?></bdi></dd>
 							<?php endif; ?>
 						</dl>
-						<div class="game-actions">
-							<?php rvt_favorite_button( $rvt_game ); ?>
-							<?php if ( $rvt_game['downloadable'] ) : ?>
-								<a class="btn btn--pill btn--sm" href="<?php echo esc_url( $rvt_game['download_url'] ); ?>" rel="nofollow">
-									<?php echo rvt_icon( 'download' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-									<?php
-									esc_html_e( 'تنزيل الملف', 'retrovault' );
-									if ( $rvt_game['rom']['ext'] ) {
-										echo ' <bdi dir="ltr">.' . esc_html( $rvt_game['rom']['ext'] ) . '</bdi>';
-									}
-									?>
-								</a>
-							<?php endif; ?>
-							<button type="button" class="btn btn--ghost btn--sm" data-share data-title="<?php echo esc_attr( $rvt_game['title'] ); ?>" data-url="<?php echo esc_url( $rvt_game['url'] ); ?>">
-								<?php echo rvt_icon( 'share' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-								<?php esc_html_e( 'مشاركة', 'retrovault' ); ?>
-							</button>
-						</div>
 					</section>
 				</aside>
-			</div>
 
-			<div class="game-body">
 				<div class="game-main">
 					<?php if ( ! empty( $rvt_game['has_content'] ) ) : ?>
 						<section class="game-section" aria-labelledby="about-title">
@@ -150,15 +219,15 @@ while ( have_posts() ) :
 									?>
 									<a class="shot<?php echo $rvt_pixel ? ' is-pixel' : ''; ?>" href="<?php echo esc_url( $rvt_full ); ?>" data-shot data-alt="<?php echo esc_attr( $rvt_alt ); ?>">
 										<?php
-										echo wp_get_attachment_image(
+										echo rvt_image( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 											$rvt_shot,
 											$rvt_pixel ? 'full' : 'medium_large',
-											false,
 											array(
 												'alt'     => $rvt_alt,
 												'loading' => 'lazy',
 												'class'   => $rvt_pixel ? 'is-pixel' : '',
-											)
+											),
+											'(max-width: 640px) 50vw, 260px'
 										);
 										?>
 									</a>
@@ -203,13 +272,13 @@ while ( have_posts() ) :
 						?>
 						<section class="game-section" aria-labelledby="devlog-title">
 							<h2 class="game-section__title" id="devlog-title"><?php esc_html_e( 'من يوميات التطوير', 'retrovault' ); ?></h2>
-							<div class="log-list">
-								<?php
-								foreach ( $rvt_log->posts as $rvt_post ) {
-									rvt_log_card( $rvt_post, array( 'chips' => false ) );
-								}
-								?>
-							</div>
+							<ol class="timeline timeline--compact">
+								<?php foreach ( $rvt_log->posts as $rvt_post ) : ?>
+									<li class="timeline__item" style="--dot:<?php echo esc_attr( $rvt_color ); ?>">
+										<?php rvt_log_card( $rvt_post, array( 'chips' => false ) ); ?>
+									</li>
+								<?php endforeach; ?>
+							</ol>
 							<?php if ( rv_devlog_url() ) : ?>
 								<p class="log-more"><a href="<?php echo esc_url( rv_devlog_url() ); ?>"><?php esc_html_e( 'كل يوميات التطوير', 'retrovault' ); ?></a></p>
 							<?php endif; ?>
@@ -223,35 +292,6 @@ while ( have_posts() ) :
 						</section>
 					<?php endif; ?>
 				</div>
-
-				<aside class="game-aside">
-					<section class="panel" id="controls" aria-labelledby="controls-title">
-						<h2 class="panel__title" id="controls-title"><?php esc_html_e( 'التحكم بلوحة المفاتيح', 'retrovault' ); ?></h2>
-						<?php if ( $rvt_controls ) : ?>
-							<table class="keys">
-								<tbody>
-									<?php foreach ( $rvt_controls as $rvt_row ) : ?>
-										<tr>
-											<th scope="row"><?php echo esc_html( $rvt_row['label'] ); ?></th>
-											<td>
-												<?php foreach ( $rvt_row['keys'] as $rvt_key ) : ?>
-													<kbd><?php echo esc_html( $rvt_key ); ?></kbd>
-												<?php endforeach; ?>
-											</td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						<?php endif; ?>
-						<?php if ( $rvt_game['controls'] ) : ?>
-							<div class="keys__notes"><?php echo wp_kses_post( wpautop( $rvt_game['controls'] ) ); ?></div>
-						<?php endif; ?>
-						<p class="keys__note">
-							<?php echo rvt_icon( 'pad' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-							<?php esc_html_e( 'يد التحكم تعمل تلقائياً عند توصيلها، وعلى الجوال تظهر أزرار لمس. لتغيير الأزرار افتح إعدادات التحكم من شريط المحاكي.', 'retrovault' ); ?>
-						</p>
-					</section>
-				</aside>
 			</div>
 		</div>
 

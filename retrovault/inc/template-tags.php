@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
  * ---------------------------------------------------------------------- */
 
 /**
- * @param string $type games|systems|plays|ratings|comments.
+ * @param string $type games|systems|plays|ratings|comments|stars.
  * @return string[] [zero, one, two, few, many]
  */
 function rvt_count_forms( $type ) {
@@ -23,6 +23,8 @@ function rvt_count_forms( $type ) {
 			return array( __( 'لم تُلعب بعد', 'retrovault' ), __( 'مرة واحدة', 'retrovault' ), __( 'مرتين', 'retrovault' ), __( '%s مرات', 'retrovault' ), __( '%s مرة', 'retrovault' ) );
 		case 'ratings':
 			return array( __( 'لا تقييمات بعد', 'retrovault' ), __( 'تقييم واحد', 'retrovault' ), __( 'تقييمان', 'retrovault' ), __( '%s تقييمات', 'retrovault' ), __( '%s تقييماً', 'retrovault' ) );
+		case 'stars':
+			return array( __( 'بلا نجوم', 'retrovault' ), __( 'نجمة واحدة', 'retrovault' ), __( 'نجمتان', 'retrovault' ), __( '%s نجوم', 'retrovault' ), __( '%s نجمة', 'retrovault' ) );
 		case 'comments':
 			return array( __( 'لا تعليقات بعد', 'retrovault' ), __( 'تعليق واحد', 'retrovault' ), __( 'تعليقان', 'retrovault' ), __( '%s تعليقات', 'retrovault' ), __( '%s تعليقاً', 'retrovault' ) );
 		default:
@@ -240,6 +242,22 @@ function rvt_stars( $average, $args = array() ) {
 }
 
 /**
+ * صورة مرفق بقيمة sizes تناسب مكانها. تُضاف sizes فقط مع srcset (وحدها خطأ في HTML).
+ *
+ * @param int    $id    رقم الصورة.
+ * @param string $size  الحجم المسجّل.
+ * @param array  $attr  سمات الوسم.
+ * @param string $sizes قيمة sizes.
+ * @return string
+ */
+function rvt_image( $id, $size, $attr, $sizes ) {
+	if ( wp_get_attachment_image_srcset( $id, $size ) ) {
+		$attr['sizes'] = $sizes;
+	}
+	return wp_get_attachment_image( $id, $size, false, $attr );
+}
+
+/**
  * @param array|null $system بيانات النظام.
  * @param bool       $link   رابط لصفحة النظام.
  */
@@ -262,22 +280,53 @@ function rvt_status_chip( $game ) {
 }
 
 /**
- * صندوق التقييم: الملخّص للجميع، والنجوم التفاعلية للأعضاء.
+ * عدد التقييمات لكل درجة، من 5 إلى 1.
+ *
+ * @param int $game_id رقم اللعبة.
+ * @return array<int,int>
+ */
+function rvt_rating_counts( $game_id ) {
+	$counts = array_fill_keys( array( 5, 4, 3, 2, 1 ), 0 );
+	foreach ( rv_game_ratings( $game_id ) as $rating ) {
+		if ( isset( $counts[ $rating ] ) ) {
+			++$counts[ $rating ];
+		}
+	}
+	return $counts;
+}
+
+/**
+ * صندوق التقييم: المتوسط وتوزيع التقييمات للجميع، والنجوم التفاعلية للأعضاء.
  *
  * @param array $game بيانات اللعبة.
  */
 function rvt_rating_box( $game ) {
-	$r    = $game['rating'];
-	$user = is_user_logged_in() ? rv_user_rating( $game['id'] ) : 0;
+	$r      = $game['rating'];
+	$user   = is_user_logged_in() ? rv_user_rating( $game['id'] ) : 0;
+	$counts = rvt_rating_counts( $game['id'] );
+	$total  = array_sum( $counts );
 	?>
-	<div class="rate" data-rating-box data-game="<?php echo esc_attr( $game['id'] ); ?>">
+	<div class="rate" data-rating-box data-game="<?php echo esc_attr( $game['id'] ); ?>" data-user="<?php echo (int) $user; ?>">
 		<h2 class="panel__title"><?php esc_html_e( 'التقييم', 'retrovault' ); ?></h2>
 		<div class="rate__summary">
-			<?php echo rvt_stars( $r['average'], array( 'size' => 'lg', 'live' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-			<p class="rate__numbers">
-				<strong data-rating-avg><?php echo $r['count'] ? esc_html( number_format_i18n( $r['average'], 1 ) ) : '—'; ?></strong>
-				<span data-rating-count><?php echo esc_html( rvt_count( $r['count'], 'ratings' ) ); ?></span>
+			<p class="rate__score">
+				<strong class="rate__avg" data-rating-avg><?php echo $r['count'] ? esc_html( number_format_i18n( $r['average'], 1 ) ) : '—'; ?></strong>
+				<?php echo rvt_stars( $r['average'], array( 'live' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<span class="rate__count" data-rating-count><?php echo esc_html( rvt_count( $r['count'], 'ratings' ) ); ?></span>
 			</p>
+			<ul class="rate__bars" aria-label="<?php esc_attr_e( 'توزيع التقييمات', 'retrovault' ); ?>"<?php echo $total ? '' : ' hidden'; ?>>
+				<?php foreach ( $counts as $stars => $n ) : ?>
+					<li class="rate__bar" data-rating-bar="<?php echo (int) $stars; ?>" data-n="<?php echo (int) $n; ?>" style="--share:<?php echo esc_attr( sprintf( '%.1F', $total ? $n / $total * 100 : 0 ) ); ?>%">
+						<span class="rate__bar-label">
+							<span aria-hidden="true"><?php echo esc_html( number_format_i18n( $stars ) ); ?></span>
+							<?php echo rvt_icon( 'star' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+							<span class="screen-reader-text"><?php echo esc_html( rvt_count( $stars, 'stars' ) ); ?>:</span>
+						</span>
+						<span class="rate__bar-track" aria-hidden="true"></span>
+						<span class="rate__bar-n" data-rating-n><?php echo esc_html( number_format_i18n( $n ) ); ?></span>
+					</li>
+				<?php endforeach; ?>
+			</ul>
 		</div>
 		<?php if ( is_user_logged_in() ) : ?>
 			<fieldset class="rate__input">
