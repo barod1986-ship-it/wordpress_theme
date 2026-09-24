@@ -172,6 +172,8 @@ final class Post_Types {
 
 		add_rewrite_endpoint( 'play', self::EP_GAME, 'rv_play' );
 		add_rewrite_endpoint( 'download', self::EP_GAME, 'rv_download' );
+		// ملف اللعبة المحمي للمشغّل: /games/{slug}/rom/{رمز}/{اسم الملف} (انظر Roms).
+		add_rewrite_endpoint( 'rom', self::EP_GAME, 'rv_rom' );
 	}
 
 	/**

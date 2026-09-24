@@ -29,6 +29,7 @@ final class Installer {
 		if ( false === get_option( Settings::OPTION ) ) {
 			add_option( Settings::OPTION, Settings::defaults() );
 		}
+		Roms::protect_all();
 		update_option( 'retrovault_db_version', RETROVAULT_DB_VERSION );
 		flush_rewrite_rules();
 	}
@@ -43,6 +44,7 @@ final class Installer {
 	 * 4: جدولا المتابعة والإشعارات، ونقل المفضلة إليهما.
 	 * 5: جدول الإحصائيات اليومية و«الرائجة». 6: (النسخة الإنجليزية معطّلة).
 	 * 7: أُزيلت النسخة الإنجليزية وتُحذف بياناتها المتبقية.
+	 * 8: حماية ملفات الألعاب: نقلها للمجلد المحمي، وقاعدة رابط /rom/ الجديدة.
 	 */
 	public static function maybe_upgrade() {
 		if ( get_option( 'retrovault_db_version' ) === RETROVAULT_DB_VERSION ) {
@@ -60,6 +62,10 @@ final class Installer {
 		Favorites::migrate_legacy();
 		if ( version_compare( $from, '7', '<' ) ) {
 			self::remove_english_data();
+		}
+		if ( version_compare( $from, '8', '<' ) ) {
+			Roms::protect_all();
+			flush_rewrite_rules( false );
 		}
 		if ( version_compare( $from, '5', '<' ) ) {
 			self::backfill();
