@@ -11,6 +11,17 @@
 		navigator.serviceWorker.register(C.sw, { scope: C.scope }).catch(function () { /* غير مدعوم أو اتصال غير آمن */ });
 	});
 
+	/* تغيّر الحساب على هذا الجهاز (خروج، أو دخول بحساب آخر): تُحذف نسخ الصفحات المحفوظة
+	 * (rv-pages في sw.js) حتى لا تُعرض صفحات الحساب السابق بدون إنترنت على جهاز مشترك. */
+	try {
+		var who = C.user || '';
+		var last = window.localStorage.getItem('rv-pwa-user');
+		if (last !== null && last !== who && window.caches) {
+			caches.delete('rv-pages').catch(function () {});
+		}
+		window.localStorage.setItem('rv-pwa-user', who);
+	} catch (e) { /* التخزين المحلي غير متاح */ }
+
 	/* زر «ثبّت الموقع كتطبيق» يظهر فقط عندما يسمح المتصفح بالتثبيت */
 	var deferred = null;
 	var buttons = function () { return Array.prototype.slice.call(document.querySelectorAll('[data-rv-install]')); };

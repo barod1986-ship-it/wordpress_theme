@@ -47,13 +47,14 @@ $rvt_library = rvt_library_url();
 <?php endif; ?>
 
 <?php
+$rvt_new = rv_query_games( array( 'number' => 6 ) );
 get_template_part(
 	'template-parts/shelf',
 	null,
 	array(
 		'id'        => 'shelf-new',
 		'title'     => __( 'وصلت حديثاً', 'retrovault' ),
-		'query'     => rv_query_games( array( 'number' => 6 ) ),
+		'query'     => $rvt_new,
 		'link'      => $rvt_library,
 		'link_text' => __( 'كل الألعاب', 'retrovault' ),
 	)
@@ -123,8 +124,7 @@ if ( rvt_mod( 'rvt_show_updated' ) ) {
 		)
 	);
 	// نعرض الرف فقط إذا اختلف ترتيبه عن «وصلت حديثاً» (أي أن لعبة قديمة حُدّثت).
-	$rvt_new_ids = wp_list_pluck( rv_query_games( array( 'number' => 6 ) )->posts, 'ID' );
-	if ( wp_list_pluck( $rvt_updated->posts, 'ID' ) !== $rvt_new_ids ) {
+	if ( wp_list_pluck( $rvt_updated->posts, 'ID' ) !== wp_list_pluck( $rvt_new->posts, 'ID' ) ) {
 		get_template_part(
 			'template-parts/shelf',
 			null,
