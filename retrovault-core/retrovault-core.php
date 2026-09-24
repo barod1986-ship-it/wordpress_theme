@@ -3,7 +3,7 @@
  * Plugin Name:       RetroVault Core
  * Plugin URI:        https://github.com/barod1986-ship-it/wordpress_theme
  * Description:       النواة الوظيفية لمكتبة ألعاب الرترو: نوع محتوى «لعبة»، الأنظمة والأنواع، مشغّل EmulatorJS داخل المتصفح، التقييم بالنجوم، الحفظ السحابي (حالات + حفظ اللعبة الداخلي) والمفضلة وصفحة حساب للأعضاء، يوميات التطوير، إشعارات المتابعين، تطبيق ويب يعمل بدون إنترنت، الإحصائيات وواجهة REST.
- * Version:           1.6.1
+ * Version:           1.6.2
  * Requires at least: 6.3
  * Requires PHP:      7.4
  * Author:            RetroVault
@@ -20,7 +20,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RETROVAULT_VERSION', '1.6.1' );
+define( 'RETROVAULT_VERSION', '1.6.2' );
 define( 'RETROVAULT_DB_VERSION', '7' );
 define( 'RETROVAULT_FILE', __FILE__ );
 define( 'RETROVAULT_PATH', plugin_dir_path( __FILE__ ) );
