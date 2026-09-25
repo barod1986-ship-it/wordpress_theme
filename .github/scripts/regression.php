@@ -333,6 +333,10 @@ $tests = apply_filters( 'site_status_tests', array( 'direct' => array(), 'async'
 rv_assert( isset( $tests['async']['retrovault_roms']['has_rest'] ) && is_callable( $tests['async']['retrovault_roms']['async_direct_test'] ), 'Site Health checks that game files reach the player' );
 $route = rest_get_server()->dispatch( new WP_REST_Request( 'GET', '/retrovault/v1/site-health/roms' ) );
 rv_assert( in_array( $route->get_status(), array( 401, 403 ), true ), 'the Site Health route is for administrators only' );
+$GLOBALS['_playground_consts'] = array();
+$health                        = \RetroVault\Roms::site_health_roms();
+unset( $GLOBALS['_playground_consts'] );
+rv_assert( 'good' === $health['status'] && false !== strpos( $health['description'], 'Playground' ), 'Site Health does not send a loopback request inside WordPress Playground' );
 rv_assert( null === \RetroVault\Roms::check_link( home_url( '/wp-content/uploads/game.nes' ) ), 'a direct link on the same site needs no permission' );
 $https = static function ( $url ) {
 	return set_url_scheme( $url, 'https' );

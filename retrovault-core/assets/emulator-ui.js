@@ -10,10 +10,23 @@
 	var A = C.admin || null;
 	var loads = [];
 
-	/* EmulatorJS يطلب ملف اللعبة وملف BIOS بـ XMLHttpRequest ولا يحتفظ برد الخادم؛ نسجّل نتيجتهما فقط. */
+	/* EmulatorJS يطلب ملف اللعبة وملف BIOS بـ XMLHttpRequest (والإصدارات الأحدث بـ fetch) ولا يحتفظ برد
+	 * الخادم؛ نسجّل نتيجتهما فقط. */
 	function watched(url) {
 		return typeof url === 'string' && url !== '' && (url === window.EJS_gameUrl || url === window.EJS_biosUrl);
 	}
+
+	/* ترويسة المشغّل على طلب ملف اللعبة المحمي. بعض البيئات لا توصل ترويسات المتصفح (Sec-Fetch وReferer)
+	 * إلى PHP، مثل WordPress Playground الذي يعمل عبر عامل خدمة، فيتحقق الخادم منها بدلاً عنها. صفحة
+	 * موقع آخر لا تستطيع إضافة ترويسة خاصة إلى طلب لموقعنا دون إذن CORS، ولا نمنحه. */
+	var PLAYER_HEADER = 'X-RetroVault-Player';
+	function ours(url) {
+		if (!C.protected || url !== window.EJS_gameUrl) {
+			return false;
+		}
+		try { return new URL(url, window.location.href).origin === window.location.origin; } catch (e) { return false; }
+	}
+
 	var xhrOpen = XMLHttpRequest.prototype.open;
 	var xhrSend = XMLHttpRequest.prototype.send;
 	XMLHttpRequest.prototype.open = function (method, url) {
@@ -24,6 +37,9 @@
 		var xhr = this;
 		var w = xhr.rvWatch;
 		if (w) {
+			if (ours(w.url)) {
+				try { xhr.setRequestHeader(PLAYER_HEADER, '1'); } catch (e) { /* تجاهل */ }
+			}
 			// قبل onload/onerror التي يعالج فيها المحاكي الفشل (readystatechange يسبقهما).
 			xhr.addEventListener('readystatechange', function () {
 				if (xhr.readyState === 4) {
@@ -33,6 +49,30 @@
 		}
 		return xhrSend.apply(this, arguments);
 	};
+
+	if (typeof window.fetch === 'function') {
+		var fetchOriginal = window.fetch;
+		window.fetch = function (input, init) {
+			var url = typeof input === 'string' ? input : '';
+			if (!watched(url)) {
+				return fetchOriginal.apply(window, arguments);
+			}
+			var method = String((init && init.method) || 'GET').toUpperCase();
+			if (ours(url)) {
+				init = Object.assign({}, init);
+				var headers = new Headers(init.headers || {});
+				headers.set(PLAYER_HEADER, '1');
+				init.headers = headers;
+			}
+			return fetchOriginal.call(window, input, init).then(function (res) {
+				loads.push({ url: url, method: method, status: res.status, reason: res.headers.get('X-RetroVault-Rom') || '' });
+				return res;
+			}, function (err) {
+				loads.push({ url: url, method: method, status: 0, reason: '' });
+				throw err;
+			});
+		};
+	}
 
 	/* نص بلا ترجمة في ملف اللغة، أو «قسم (يحتاج إعادة البدء)» الذي يركّبه المحاكي بعد ترجمة نصفه الثاني. */
 	function translator(map) {
