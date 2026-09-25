@@ -288,7 +288,7 @@ final class Game_Meta {
 		}
 
 		if ( '' === $game['rom']['url'] ) {
-			$messages[] = array( 'warning', __( 'لم يُحدَّد ملف اللعبة بعد؛ سيظهر المشغّل برسالة «غير متاح» إلى أن ترفعه.', 'retrovault-core' ) );
+			$messages[] = $game['rom']['id'] ? array( 'error', __( 'ملف اللعبة مفقود أو تعذّرت حمايته. أوقفنا تشغيله وتنزيله؛ تحقّق من الملف وصلاحيات مجلد الرفع ثم احفظ اللعبة مجدداً.', 'retrovault-core' ) ) : array( 'warning', __( 'لم يُحدَّد ملف اللعبة بعد؛ سيظهر المشغّل برسالة «غير متاح» إلى أن ترفعه.', 'retrovault-core' ) );
 		} elseif ( $game['system'] && $game['rom']['ext'] ) {
 			$allowed = array_merge( $game['system']['ext'], array( 'zip', '7z' ) );
 			if ( ! in_array( $game['rom']['ext'], $allowed, true ) ) {

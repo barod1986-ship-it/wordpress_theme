@@ -144,17 +144,37 @@ check() {
 	if [ "$3" = "$2" ]; then echo "ok $2 $1"; else fail "$1 returned $3 (expected $2)"; fi
 }
 xhr=(-H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Dest: empty')
-rom=$(curl -s "$BASE/games/pixel-quest/play/" | grep -oE 'EJS_gameUrl = "[^"]+"' | sed -e 's/^EJS_gameUrl = "//' -e 's/"$//' -e 's#\\/#/#g' || true)
+curl -s -D "$TMP/player.headers" -c "$TMP/player.jar" "$BASE/games/pixel-quest/play/" > "$TMP/player.html"
+rom=$(grep -oE 'EJS_gameUrl = "[^"]+"' "$TMP/player.html" | sed -e 's/^EJS_gameUrl = "//' -e 's/"$//' -e 's#\\/#/#g' || true)
+if grep -qi '^set-cookie: rv_player_.*HttpOnly.*SameSite=Lax' "$TMP/player.headers"; then
+	echo "ok player issues an HttpOnly SameSite session cookie"
+else
+	fail "player session cookie is missing or insecure"
+fi
 file=$(wp eval "echo wp_get_attachment_url( (int) get_post_meta( $GAME, '_rv_rom_id', true ) );")
 case "$rom" in
 	"$BASE"/games/pixel-quest/rom/*) echo "ok player gets the protected link" ;;
 	*) fail "player does not get the protected link: $rom" ;;
 esac
-check "game file for the player" 200 "$(status "${xhr[@]}" "$rom")"
-check "game file size check (HEAD)" 200 "$(status -I "${xhr[@]}" "$rom")"
-check "game file opened in a browser tab" 403 "$(status -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
-check "game file requested by another site" 403 "$(status -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
-check "game file with a wrong token" 403 "$(status "${xhr[@]}" "$(printf '%s' "$rom" | sed -E 's#/rom/[0-9a-f]{32}/#/rom/00000000000000000000000000000000/#')")"
+check "game file for the player" 200 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+check "game file size check (HEAD)" 200 "$(status -b "$TMP/player.jar" -I "${xhr[@]}" "$rom")"
+check "copied link without its browser session" 403 "$(status "${xhr[@]}" "$rom")"
+curl -s -c "$TMP/other-player.jar" "$BASE/games/pixel-quest/play/" > /dev/null
+check "copied link in another browser session" 403 "$(status -b "$TMP/other-player.jar" "${xhr[@]}" "$rom")"
+check "game file opened in a browser tab" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
+check "game file requested by another site" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
+check "same-site subdomain cannot request the ROM" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' "$rom")"
+check "ROM request with no source headers" 403 "$(status -b "$TMP/player.jar" "$rom")"
+check "legacy player with same-origin referer" 200 "$(status -b "$TMP/player.jar" -e "$BASE/games/pixel-quest/play/" "$rom")"
+check "legacy request with a foreign referer" 403 "$(status -b "$TMP/player.jar" -e 'https://other.example/player/' "$rom")"
+check "unsupported ROM method" 405 "$(status -b "$TMP/player.jar" "${xhr[@]}" -X POST "$rom")"
+check "unsupported download method" 405 "$(status -X POST "$BASE/games/pixel-quest/download/")"
+check "game file with a wrong token" 403 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$(printf '%s' "$rom" | sed -E 's#/rom/[0-9a-f]{32}/#/rom/00000000000000000000000000000000/#')")"
+if curl -s -D - -o /dev/null -b "$TMP/player.jar" "${xhr[@]}" "$rom" | grep -qi '^cache-control:.*no-store'; then
+	echo "ok browser HTTP cache cannot bypass server authorization"
+else
+	fail "ROM response allows an unchecked HTTP-cache replay"
+fi
 check "game file at its direct address" 403 "$(status "$file")"
 if curl -s -D - -o /dev/null "$BASE/games/pixel-quest/download/" | grep -qi '^content-disposition: attachment'; then
 	echo "ok allowed download is sent as an attachment"
@@ -166,6 +186,17 @@ if curl -s "$BASE/wp-json/wp/v2/media?per_page=100" | grep -q 'retrovault-roms';
 else
 	echo "ok game file is hidden from the public media API"
 fi
+wp post update "$GAME" --post_password=rom-test --quiet
+check "password-protected ROM without the password" 403 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+check "password-protected download" 403 "$(status "$BASE/games/pixel-quest/download/")"
+wp post update "$GAME" --post_password= --quiet
+wp post update "$GAME" --post_status=private --quiet
+check "unpublished ROM cannot be read by a guest" 404 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+wp post update "$GAME" --post_status=publish --quiet
+wp option patch update retrovault_settings downloads 0 --format=json --quiet
+check "globally disabled downloads" 403 "$(status "$BASE/games/pixel-quest/download/")"
+check "disabling downloads preserves authorized play" 200 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+wp option patch update retrovault_settings downloads 1 --format=json --quiet
 
 echo "== Member"
 login member

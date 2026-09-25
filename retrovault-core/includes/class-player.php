@@ -34,6 +34,11 @@ final class Player {
 		}
 		global $wp_query;
 		$vars = (array) $wp_query->query;
+		if ( array_intersect( array( 'rv_rom', 'rv_play', 'rv_download' ), array_keys( $vars ) ) && ! in_array( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '', array( 'GET', 'HEAD' ), true ) ) {
+			header( 'Allow: GET, HEAD' );
+			nocache_headers();
+			wp_die( esc_html__( 'طريقة الطلب غير مسموحة.', 'retrovault-core' ), '', array( 'response' => 405 ) );
+		}
 
 		if ( array_key_exists( 'rv_rom', $vars ) ) {
 			Roms::serve( get_queried_object() );
@@ -120,6 +125,7 @@ final class Player {
 			define( 'DONOTCACHEPAGE', true );
 		}
 		nocache_headers();
+		Roms::prepare_session();
 		status_header( 200 );
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex, nofollow', true );
