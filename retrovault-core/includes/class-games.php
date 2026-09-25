@@ -331,7 +331,10 @@ final class Games {
 		if ( $meta['rom_id'] ) {
 			$raw       = (string) wp_get_attachment_url( $meta['rom_id'] );
 			$path      = get_attached_file( $meta['rom_id'] );
-			$protected = $path && Roms::is_protected_path( $path ) && file_exists( $path );
+			$protected = $path && Roms::is_protected_path( $path ) && is_file( $path ) && is_readable( $path );
+			if ( ! $protected ) {
+				$raw = ''; // An attachment that failed protection must never expose a public fallback.
+			}
 			// الاسم الأصلي، لا الاسم العشوائي للملف المحمي.
 			$file = $path ? Roms::name( $meta['rom_id'], $path ) : '';
 			$md   = wp_get_attachment_metadata( $meta['rom_id'] );
@@ -342,7 +345,7 @@ final class Games {
 			}
 			$stamp = (string) get_post_modified_time( 'U', true, $meta['rom_id'] );
 		}
-		if ( '' === $raw && $meta['rom_url'] ) {
+		if ( ! $meta['rom_id'] && $meta['rom_url'] ) {
 			$raw  = $meta['rom_url'];
 			$file = wp_basename( (string) wp_parse_url( $raw, PHP_URL_PATH ) );
 		}

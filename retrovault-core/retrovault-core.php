@@ -21,7 +21,7 @@
 defined( 'ABSPATH' ) || exit;
 
 define( 'RETROVAULT_VERSION', '1.8.0' );
-define( 'RETROVAULT_DB_VERSION', '8' );
+define( 'RETROVAULT_DB_VERSION', '9' );
 define( 'RETROVAULT_FILE', __FILE__ );
 define( 'RETROVAULT_PATH', plugin_dir_path( __FILE__ ) );
 define( 'RETROVAULT_URL', plugin_dir_url( __FILE__ ) );

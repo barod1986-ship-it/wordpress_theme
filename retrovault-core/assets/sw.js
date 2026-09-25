@@ -8,9 +8,11 @@
 
 	var C = self.RV_SW;
 	var SHELL = 'rv-shell-' + C.version;
-	var PAGES = 'rv-pages';
+	var PAGES = 'rv-pages-' + C.version;
 	var GAMES = 'rv-games';
 	var KEEP = [SHELL, PAGES, GAMES, 'rv-offline'];
+	var gameRequests = Object.create(null);
+	var disabled = false;
 
 	self.addEventListener('install', function (event) {
 		event.waitUntil(
@@ -83,7 +85,22 @@
 	function gameAsset(event) {
 		var req = event.request;
 		var key = gameKey(req.url);
-		/* بلا إنترنت، أو رابط انتهى رمزه (صفحة مفتوحة منذ ساعات): النسخة المحفوظة إن وُجدت */
+		var url = new URL(req.url);
+		var protectedRom = url.origin === self.location.origin && (ROM_PATH.test(url.pathname) || ROM_QUERY.test(url.search));
+		if (protectedRom && (['cors', 'same-origin'].indexOf(req.mode) === -1 || req.destination)) {
+			return Promise.resolve(new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } }));
+		}
+		if (event.clientId) {
+			var seen = gameRequests[event.clientId] || (gameRequests[event.clientId] = []);
+			if (seen.indexOf(key) === -1) { seen.push(key); }
+		}
+		/* Network failures can use the offline copy; an explicit server denial must win. */
+		function denied(cache, response) {
+			if ([401, 403, 404, 410].indexOf(response.status) !== -1) {
+				return cache.delete(key).catch(function () {}).then(function () { return response; });
+			}
+			return response;
+		}
 		function saved(cache, fallback, headOnly) {
 			return cache.match(key).then(function (hit) {
 				if (!hit) {
@@ -96,7 +113,7 @@
 			if (req.method === 'HEAD') {
 				return fetch(req).then(function (res) {
 					if (!res.ok) {
-						return saved(cache, res, true);
+						return denied(cache, res);
 					}
 					/* EmulatorJS يتحقق بطلب HEAD ثم يستخدم نسخته المخزّنة دون تنزيل؛
 					 * نجلب الملف في الخلفية مرة واحدة ليبقى متاحاً بدون إنترنت. */
@@ -115,10 +132,9 @@
 			}
 			return fetch(req).then(function (res) {
 				if (!cacheable(res)) {
-					return saved(cache, res, false);
+					return denied(cache, res);
 				}
-				cache.put(key, res.clone());
-				return res;
+				return cache.put(key, res.clone()).catch(function () {}).then(function () { return res; });
 			}).catch(function () {
 				return saved(cache, null, false);
 			});
@@ -156,7 +172,7 @@
 			return cache.match(req).then(function (hit) {
 				var fresh = fetch(req).then(function (res) {
 					if (cacheable(res)) {
-						cache.put(req, res.clone());
+						return cache.put(req, res.clone()).catch(function () {}).then(function () { return res; });
 					}
 					return res;
 				});
@@ -166,7 +182,58 @@
 		});
 	}
 
+	/* A marker is a receipt for actual cached responses, never just a game-start event. */
+	function offlineReady(record, prepare, clientId) {
+		if (!record || record.protocol !== 2 || !record.data || !record.rom || !record.player || !Array.isArray(record.resources)) {
+			return Promise.resolve(false);
+		}
+		var rom = new URL(record.rom, self.location.origin);
+		var pages = [record.data.url, record.player];
+		if (!isGameAsset(rom) || pages.some(function (href) {
+			var url = new URL(href, self.location.origin);
+			return url.origin !== self.location.origin || skipped(url);
+		})) { return Promise.resolve(false); }
+		var resources = record.resources.concat(prepare ? (gameRequests[clientId] || []) : []);
+		resources.push(C.dataPath + 'loader.js', gameKey(rom.href));
+		resources = resources.filter(function (url, i, all) { return all.indexOf(url) === i; });
+		return Promise.all([caches.open(PAGES), caches.open(GAMES), caches.open(SHELL)]).then(function (stores) {
+			return Promise.all(pages.map(function (href) {
+				return stores[0].match(href).then(function (hit) {
+					if (hit) { return true; }
+					if (!prepare) { return false; }
+					return fetch(href, { credentials: 'same-origin' }).then(function (res) {
+						if (!res.ok || res.type !== 'basic' || !(res.headers.get('Content-Type') || '').includes('text/html')) { return false; }
+						return stores[0].put(href, res).then(function () { return true; });
+					}).catch(function () { return false; });
+				});
+			}).concat(resources.map(function (href) {
+				return Promise.all([stores[1].match(gameKey(href)), stores[2].match(href)]).then(function (hits) {
+					return hits.some(function (hit) { return !!hit; });
+				});
+			}))).then(function (ok) {
+				if (ok.some(function (value) { return !value; })) { return false; }
+				record.resources = resources;
+				return true;
+			});
+		}).catch(function () { return false; });
+	}
+
+	self.addEventListener('message', function (event) {
+		var message = event.data || {};
+		if (message.type === 'rv:disable') {
+			disabled = true;
+			event.waitUntil(self.registration.unregister());
+			return;
+		}
+		if (message.type !== 'rv:offline-check' || !event.ports[0]) { return; }
+		var record = message.record;
+		event.waitUntil(offlineReady(record, !!message.prepare, event.source ? event.source.id : '').then(function (ready) {
+			event.ports[0].postMessage({ ready: ready, record: ready ? record : null });
+		}).catch(function () { event.ports[0].postMessage({ ready: false }); }));
+	});
+
 	self.addEventListener('fetch', function (event) {
+		if (disabled) { return; }
 		var req = event.request;
 		if (req.method !== 'GET' && req.method !== 'HEAD') {
 			return;

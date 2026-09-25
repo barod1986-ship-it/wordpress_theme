@@ -72,7 +72,7 @@ final class Post_Types {
 				),
 				'menu_icon'     => 'dashicons-games',
 				'menu_position' => 5,
-				'supports'      => array( 'title', 'editor', 'excerpt', 'thumbnail', 'comments', 'revisions', 'author' ),
+				'supports'      => array( 'title', 'editor', 'excerpt', 'thumbnail', 'comments', 'revisions', 'author', 'custom-fields' ),
 				'show_in_rest'  => true,
 				'taxonomies'    => array( self::SYSTEM, self::GENRE ),
 			)

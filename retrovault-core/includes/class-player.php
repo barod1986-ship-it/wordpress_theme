@@ -34,6 +34,11 @@ final class Player {
 		}
 		global $wp_query;
 		$vars = (array) $wp_query->query;
+		if ( array_intersect( array( 'rv_rom', 'rv_play', 'rv_download' ), array_keys( $vars ) ) && ! in_array( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '', array( 'GET', 'HEAD' ), true ) ) {
+			header( 'Allow: GET, HEAD' );
+			nocache_headers();
+			wp_die( esc_html__( 'طريقة الطلب غير مسموحة.', 'retrovault-core' ), '', array( 'response' => 405 ) );
+		}
 
 		if ( array_key_exists( 'rv_rom', $vars ) ) {
 			Roms::serve( get_queried_object() );
@@ -120,6 +125,7 @@ final class Player {
 			define( 'DONOTCACHEPAGE', true );
 		}
 		nocache_headers();
+		Roms::prepare_session();
 		status_header( 200 );
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex, nofollow', true );
@@ -167,7 +173,8 @@ window.EJS_onGameStart = function () {
 	if (typeof window.RV_markOffline === 'function') { window.RV_markOffline(); }
 };
 			<?php
-			echo Pwa::player_script( $game ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON مُرمَّز.
+			echo 'window.RVPWA = ' . wp_json_encode( Pwa::client_config(), $flags ) . ';';
+				echo Pwa::player_script( $game ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON مُرمَّز.
 			?>
 
 			<?php
@@ -176,6 +183,10 @@ window.EJS_onGameStart = function () {
 			}
 			?>
 </script>
+<script src="<?php echo esc_url( RETROVAULT_URL . 'assets/pwa.js?ver=' . RETROVAULT_VERSION ); ?>"></script>
+			<?php if ( is_user_logged_in() && Saves::enabled() ) : ?>
+<script src="<?php echo esc_url( RETROVAULT_URL . 'assets/cloud-saves.js?ver=' . RETROVAULT_VERSION ); ?>"></script>
+			<?php endif; ?>
 <script src="<?php echo esc_url( Settings::data_path() . 'loader.js' ); ?>"></script>
 		<?php endif; ?>
 </body>
@@ -236,218 +247,16 @@ window.EJS_onGameStart = function () {
 				'none'         => __( 'لا يوجد حفظ في حسابك لهذه اللعبة بعد', 'retrovault-core' ),
 				'tooBig'       => __( 'الحفظ أكبر من الحد المسموح', 'retrovault-core' ),
 				'failed'       => __( 'تعذّر الاتصال بالحفظ السحابي', 'retrovault-core' ),
+				'sramChanged'  => __( 'تغيّر الحفظ أثناء اللعب. بقي تقدّمك على هذا الجهاز؛ أعد فتح اللعبة للمزامنة.', 'retrovault-core' ),
+				'sramConflict' => __( 'يوجد تقدّم مختلف على هذا الجهاز وفي حسابك. اختر موافق لاستخدام حفظ الحساب، أو إلغاء للاحتفاظ بتقدّم هذا الجهاز ورفعه.', 'retrovault-core' ),
 				'sramRestored' => __( 'استُعيد حفظ اللعبة من حسابك ✓', 'retrovault-core' ),
-				'savedLocal'   => __( 'لا يوجد اتصال: حُفظ على هذا الجهاز', 'retrovault-core' ),
+				'savedLocal'   => __( 'حُفظ على هذا الجهاز؛ لم يُؤكّد الحفظ السحابي بعد', 'retrovault-core' ),
 				'loadedLocal'  => __( 'لا يوجد اتصال: استُكمل من حفظ هذا الجهاز', 'retrovault-core' ),
 				'noneLocal'    => __( 'لا يوجد اتصال، ولا يوجد حفظ على هذا الجهاز بعد', 'retrovault-core' ),
 			),
 		);
 		?>
-(function () {
-	var C = <?php echo wp_json_encode( $cfg, $flags ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
-	var ejs = function () { return window.EJS_emulator; };
-	var say = function (t) { try { ejs().displayMessage(t, 3500); } catch (e) {} };
-	var wait = function (ms) { return new Promise(function (r) { setTimeout(function () { r(null); }, ms); }); };
-	var api = function (path, opts) {
-		opts = opts || {};
-		opts.credentials = 'same-origin';
-		opts.headers = { 'X-WP-Nonce': C.nonce };
-		return fetch(C.rest + 'games/' + C.id + path, opts);
-	};
-	/* الضغط داخل المتصفح: حالات N64 مثلاً ~16MB أغلبها أصفار */
-	var pack = function (bytes) {
-		if (!window.CompressionStream) { return Promise.resolve({ data: new Blob([bytes]), enc: 'raw' }); }
-		var stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
-		return new Response(stream).blob().then(function (b) { return { data: b, enc: 'gzip' }; });
-	};
-	var unpack = function (buf, enc) {
-		if (enc !== 'gzip') { return Promise.resolve(new Uint8Array(buf)); }
-		var stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
-		return new Response(stream).arrayBuffer().then(function (b) { return new Uint8Array(b); });
-	};
-	/* صورة مصغّرة (480px كحد أقصى) للّحظة المحفوظة */
-	var thumb = function (blob) {
-		if (!blob || !window.createImageBitmap) { return Promise.resolve(blob); }
-		return createImageBitmap(blob).then(function (bmp) {
-			var scale = Math.min(1, 480 / bmp.width);
-			var c = document.createElement('canvas');
-			c.width = Math.max(1, Math.round(bmp.width * scale));
-			c.height = Math.max(1, Math.round(bmp.height * scale));
-			c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-			return new Promise(function (res) { c.toBlob(function (b) { res(b || blob); }, 'image/webp', 0.85); });
-		}).catch(function () { return blob; });
-	};
-	/* EmulatorJS 4.2 لا يمرّر اللقطة في الحدث (e.screenshot فارغ)، فنلتقطها من الشاشة */
-	var shot = function (e) {
-		if (e && e.screenshot instanceof Blob) { return thumb(e.screenshot); }
-		try {
-			return Promise.race([
-				ejs().takeScreenshot('canvas', 'png', 1).then(function (r) { return r && r.blob ? thumb(r.blob) : null; }),
-				wait(4000)
-			]).catch(function () { return null; });
-		} catch (err) { return Promise.resolve(null); }
-	};
-	var core = function () { try { return ejs().getCore() || C.core; } catch (e) { return C.core; } };
-
-	/* ---------- بدون اتصال: الحفظ في متصفح هذا الجهاز (مخزن EmulatorJS نفسه) ---------- */
-	var localName = function () { try { return ejs().getBaseFileName() + '.state'; } catch (e) { return 'game.state'; } };
-	var saveLocal = function (state) {
-		try { ejs().storage.states.put(localName(), state); say(C.i18n.savedLocal); } catch (e) { say(C.i18n.failed); }
-	};
-	var loadLocal = function () {
-		try {
-			return ejs().storage.states.get(localName()).then(function (state) {
-				if (state) { ejs().gameManager.loadState(state); say(C.i18n.loadedLocal); } else { say(C.i18n.noneLocal); }
-			});
-		} catch (e) { say(C.i18n.failed); return Promise.resolve(); }
-	};
-	var offlineError = function (err) { return !navigator.onLine || (err && err.name === 'TypeError'); };
-
-	/* ---------- حالات المحاكي (Save State): سجل من عدة خانات ---------- */
-	window.EJS_onSaveState = function (e) {
-		if (!e || !e.state) { say(C.i18n.failed); return; }
-		if (!navigator.onLine) { saveLocal(e.state); return; }
-		say(C.i18n.saving);
-		Promise.all([pack(e.state), shot(e)]).then(function (res) {
-			if (res[0].data.size > C.max) { say(C.i18n.tooBig); return null; }
-			var form = new FormData();
-			form.append('state', res[0].data, 'state.bin');
-			form.append('encoding', res[0].enc);
-			form.append('core', core());
-			if (res[1]) { form.append('screenshot', res[1], 'shot.png'); }
-			return api('/save', { method: 'POST', body: form })
-				.then(function (r) { return r.json().then(function (j) { if (!r.ok) { throw j; } return j; }); })
-				.then(function (info) {
-					say(C.i18n.saved);
-					try { window.parent.postMessage({ type: 'rv:saved', id: C.id, info: info }, window.location.origin); } catch (x) {}
-				});
-		}).catch(function (err) {
-			if (offlineError(err)) { saveLocal(e.state); return; }
-			say((err && err.message) ? err.message : C.i18n.failed);
-		});
-	};
-
-	var load = function (quiet, slot) {
-		if (!navigator.onLine) { return quiet ? Promise.resolve() : loadLocal(); }
-		var q = (slot && slot !== '1') ? '?slot=' + encodeURIComponent(slot) : '';
-		return api('/save/state' + q)
-			.then(function (r) {
-				if (r.status === 404) { if (!quiet) { say(C.i18n.none); } return null; }
-				if (!r.ok) { throw new Error('http'); }
-				var enc = r.headers.get('X-RV-Encoding') || 'raw';
-				return r.arrayBuffer().then(function (b) { return unpack(b, enc); });
-			})
-			.then(function (bytes) {
-				if (!bytes) { return; }
-				ejs().gameManager.loadState(bytes);
-				say(C.i18n.loaded);
-			})
-			.catch(function (err) {
-				if (offlineError(err) && !quiet) { return loadLocal(); }
-				if (!quiet) { say(C.i18n.failed); }
-			});
-	};
-	window.EJS_onLoadState = function () { load(false, ''); };
-
-	/* ---------- حفظ اللعبة الداخلي (SRAM): مزامنة تلقائية ----------
-	 * ثلاث نسخ: المحلية، السحابية، وآخر نسخة زامنها هذا الجهاز (base).
-	 * تغيّرت المحلية فقط ← رفع. تغيّرت السحابية فقط ← تنزيل. تغيّرتا معاً ← نسخة الحساب تفوز. */
-	var baseKey = 'rv-sram-' + C.user + '-' + C.id;
-	var lastHash = null;
-	var leaving = false;
-	var hash = function (b) {
-		var h = 0x811c9dc5;
-		for (var i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); }
-		return (h >>> 0).toString(16) + '-' + b.length;
-	};
-	var getBase = function () { try { return localStorage.getItem(baseKey) || ''; } catch (e) { return ''; } };
-	var setBase = function (h) { lastHash = h; try { localStorage.setItem(baseKey, h); } catch (e) {} };
-
-	var uploadSram = function (bytes, h) {
-		lastHash = h;
-		return pack(bytes).then(function (p) {
-			var form = new FormData();
-			form.append('sram', p.data, 'game.srm');
-			form.append('encoding', p.enc);
-			form.append('hash', h);
-			/* keepalive يُكمل الرفع حتى لو أُغلقت الصفحة (حد المتصفح 64KB) */
-			return api('/sram', { method: 'POST', body: form, keepalive: p.data.size < 60000 });
-		}).then(function (r) {
-			if (r.ok) { setBase(h); } else { lastHash = null; }
-		}).catch(function () { lastHash = null; });
-	};
-	/* عند إغلاق الصفحة لا وقت للضغط: رفع فوري بدون ضغط إن كان صغيراً */
-	var beaconSram = function (bytes, h) {
-		if (!navigator.sendBeacon || bytes.length > 60000) { return; }
-		var form = new FormData();
-		form.append('sram', new Blob([bytes]), 'game.srm');
-		form.append('encoding', 'raw');
-		form.append('hash', h);
-		if (navigator.sendBeacon(C.rest + 'games/' + C.id + '/sram?_wpnonce=' + encodeURIComponent(C.nonce), form)) { setBase(h); }
-	};
-	/* EmulatorJS يطلق saveSaveFiles كلما كتب حفظ اللعبة (كل 30 ثانية وعند الإغلاق) */
-	var onFlush = function (bytes) {
-		if (!bytes || !bytes.length) { return; }
-		var h = hash(bytes);
-		if (h === (lastHash || getBase())) { return; }
-		if (leaving) { beaconSram(bytes, h); } else { uploadSram(bytes, h); }
-	};
-	var writeSram = function (bytes, restart) {
-		var gm = ejs().gameManager;
-		var path = gm.getSaveFilePath();
-		try { if (gm.FS.analyzePath(path).exists) { gm.FS.unlink(path); } } catch (e) {}
-		gm.FS.writeFile(path, bytes);
-		gm.loadSaveFiles();
-		/* إعادة تشغيل الجهاز لتقرأ اللعبة حفظها من البداية */
-		if (restart) { gm.restart(); }
-	};
-	var syncSram = function (restart) {
-		var gm, path, local = null;
-		try { gm = ejs().gameManager; path = gm.getSaveFilePath(); } catch (e) { return Promise.resolve(); }
-		if (!path) { return Promise.resolve(); }
-		try { if (gm.FS.analyzePath(path).exists) { local = gm.FS.readFile(path); } } catch (e) {}
-		var localHash = (local && local.length) ? hash(local) : '';
-		var base = getBase();
-		return api('/sram')
-			.then(function (r) { return r.ok ? r.json() : null; })
-			.then(function (info) {
-				var cloudHash = (info && info.exists) ? info.hash : '';
-				if (!cloudHash && !localHash) { return null; }
-				if (cloudHash === localHash) { setBase(cloudHash); return null; }
-				if (!cloudHash || (localHash && localHash !== base && cloudHash === base)) {
-					return uploadSram(local, localHash);
-				}
-				return api('/sram/file')
-					.then(function (r) {
-						if (!r.ok) { throw new Error('http'); }
-						var enc = r.headers.get('X-RV-Encoding') || 'raw';
-						return r.arrayBuffer().then(function (b) { return unpack(b, enc); });
-					})
-					.then(function (bytes) {
-						writeSram(bytes, restart);
-						setBase(cloudHash);
-						say(C.i18n.sramRestored);
-					});
-			})
-			.catch(function () {});
-	};
-
-	window.addEventListener('beforeunload', function () { leaving = true; });
-	window.addEventListener('pagehide', function () { leaving = true; });
-	document.addEventListener('visibilitychange', function () {
-		if (document.visibilityState !== 'hidden') { return; }
-		try { if (ejs() && ejs().started) { ejs().gameManager.saveSaveFiles(); } } catch (e) {}
-	});
-
-	window.RV_afterStart = function () {
-		/* المزامنة أولاً، ثم الاستكمال من حالة (الحالة تتضمن ذاكرة اللعبة فلا داعي لإعادة التشغيل) */
-		var first = C.sram ? syncSram(!C.resume) : Promise.resolve();
-		first.then(function () {
-			if (C.sram) { try { ejs().on('saveSaveFiles', onFlush); } catch (e) {} }
-			if (C.resume) { setTimeout(function () { load(true, C.resume); }, 300); }
-		});
-	};
-})();
+window.RVCloud = <?php echo wp_json_encode( $cfg, $flags ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
 		<?php
 	}
 

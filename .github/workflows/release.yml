@@ -46,9 +46,24 @@ jobs:
       - name: Smoke test on WordPress
         run: .github/scripts/smoke.sh ${{ matrix.php }}
 
+  browser:
+    name: Browser offline regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned browser test runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/rv-browser" --no-package-lock --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/rv-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify service worker lifecycle and offline readiness in Chromium
+        run: PLAYWRIGHT_MODULE="$RUNNER_TEMP/rv-browser/node_modules/playwright" node .github/scripts/pwa.test.cjs
+
   release:
     name: Publish release
-    needs: test
+    needs: [test, browser]
     if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:
