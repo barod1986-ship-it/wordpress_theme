@@ -232,6 +232,12 @@ else
 	fail "CSV export did not return a CSV file"
 fi
 
+if [ "${RV_UI_AUDIT:-0}" = 1 ]; then
+	docker cp .github/scripts/ui-seed.php "$WP:/var/www/html/wp-content/ui-seed.php"
+	wp eval-file wp-content/ui-seed.php
+	RV_UI_BASE="$BASE" node .github/scripts/ui.test.cjs || fail 'Interface regression checks failed'
+fi
+
 echo "== Regression tests"
 docker cp .github/scripts/regression.php "$WP:/var/www/html/wp-content/regression.php"
 wp eval-file wp-content/regression.php
