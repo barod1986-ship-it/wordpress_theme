@@ -147,6 +147,33 @@ final class Saves {
 		return $out;
 	}
 
+	/** Serialize changes to the complete user save index across games and requests. */
+	private static function with_lock( $user_id, $callback ) {
+		global $wpdb;
+		$key   = 'rv_saves_mutex_' . (int) $user_id;
+		$owner = ( time() + 300 ) . ':' . wp_generate_uuid4();
+		$held  = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $key, $owner ) );
+		if ( ! $held ) {
+			$old = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $key ) );
+			if ( $old && (int) $old < time() ) {
+				$held = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", $owner, $key, $old ) );
+			}
+		}
+		if ( ! $held ) {
+			return new \WP_Error( 'rv_save_busy', __( 'يجري حفظ آخر لحسابك. حاول مرة أخرى بعد لحظة.', 'retrovault-core' ), array( 'status' => 429 ) );
+		}
+		try {
+			wp_cache_delete( $user_id, 'user_meta' );
+			return $callback();
+		} finally {
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s", $key, $owner ) );
+		}
+	}
+
+	private static function write_error() {
+		return new \WP_Error( 'rv_save_write', __( 'تعذّر حفظ بيانات التقدّم. بقي الحفظ السابق كما هو.', 'retrovault-core' ), array( 'status' => 500 ) );
+	}
+
 	/**
 	 * @param int   $user_id رقم العضو.
 	 * @param array $all     كل الحفظات.
@@ -157,7 +184,7 @@ final class Saves {
 				unset( $all[ $game_id ] );
 			}
 		}
-		update_user_meta( $user_id, self::META, $all );
+		return get_user_meta( $user_id, self::META, true ) === $all || (bool) update_user_meta( $user_id, self::META, $all );
 	}
 
 	/**
@@ -218,40 +245,45 @@ final class Saves {
 	 * @return array|\WP_Error
 	 */
 	public static function add_state( $user_id, $game_id, $state_tmp, $shot_tmp, $shot_mime, $encoding, $core ) {
-		$game  = Games::get( $game_id );
-		$entry = array(
-			'token' => strtolower( wp_generate_password( 16, false ) ),
-			'time'  => time(),
-			'size'  => (int) filesize( $state_tmp ),
-			'enc'   => 'gzip' === $encoding ? 'gzip' : 'raw',
-			'shot'  => $shot_tmp ? $shot_mime : '',
-			'core'  => $core,
-			'ver'   => $game ? $game['version'] : '',
-		);
+		return self::with_lock( $user_id, static function () use ( $user_id, $game_id, $state_tmp, $shot_tmp, $shot_mime, $encoding, $core ) {
+			$game  = Games::get( $game_id );
+			$entry = array(
+				'token' => strtolower( wp_generate_password( 16, false ) ),
+				'time'  => time(),
+				'size'  => (int) filesize( $state_tmp ),
+				'enc'   => 'gzip' === $encoding ? 'gzip' : 'raw',
+				'shot'  => $shot_tmp ? $shot_mime : '',
+				'core'  => $core,
+				'ver'   => $game ? $game['version'] : '',
+			);
 
-		self::user_dir( $user_id, true );
-		if ( ! self::move( $state_tmp, self::path( $user_id, $game_id, $entry['token'], 'state' ) ) ) {
-			return new \WP_Error( 'rv_save_write', __( 'تعذّر حفظ الملف على الخادم.', 'retrovault-core' ), array( 'status' => 500 ) );
-		}
-		if ( $shot_tmp && ! self::move( $shot_tmp, self::path( $user_id, $game_id, $entry['token'], 'shot' ) ) ) {
-			$entry['shot'] = '';
-		}
+			self::user_dir( $user_id, true );
+			if ( ! self::move( $state_tmp, self::path( $user_id, $game_id, $entry['token'], 'state' ) ) ) {
+				return new \WP_Error( 'rv_save_write', __( 'تعذّر حفظ الملف على الخادم.', 'retrovault-core' ), array( 'status' => 500 ) );
+			}
+			if ( $shot_tmp && ! self::move( $shot_tmp, self::path( $user_id, $game_id, $entry['token'], 'shot' ) ) ) {
+				$entry['shot'] = '';
+			}
 
-		$all    = self::entries( $user_id );
-		$record = isset( $all[ $game_id ] ) ? $all[ $game_id ] : array(
-			'states' => array(),
-			'sram'   => null,
-		);
-		array_unshift( $record['states'], $entry );
-		$removed          = array_slice( $record['states'], self::slots() );
-		$record['states'] = array_slice( $record['states'], 0, self::slots() );
-		$all[ $game_id ]  = $record;
-		self::store( $user_id, $all );
+			$all    = self::entries( $user_id );
+			$record = isset( $all[ $game_id ] ) ? $all[ $game_id ] : array(
+				'states' => array(),
+				'sram'   => null,
+			);
+			array_unshift( $record['states'], $entry );
+			$removed          = array_slice( $record['states'], self::slots() );
+			$record['states'] = array_slice( $record['states'], 0, self::slots() );
+			$all[ $game_id ]  = $record;
+			if ( ! self::store( $user_id, $all ) ) {
+				self::unlink_entry( $user_id, $game_id, $entry, array( 'state', 'shot' ) );
+				return self::write_error();
+			}
 
-		foreach ( $removed as $old ) {
-			self::unlink_entry( $user_id, $game_id, $old, array( 'state', 'shot' ) );
-		}
-		return self::describe_state( $game_id, $entry, $game );
+			foreach ( $removed as $old ) {
+				self::unlink_entry( $user_id, $game_id, $old, array( 'state', 'shot' ) );
+			}
+			return self::describe_state( $game_id, $entry, $game );
+		} );
 	}
 
 	/**
@@ -262,21 +294,27 @@ final class Saves {
 	 * @param string $token   رمز الحالة، أو فارغ للكل.
 	 */
 	public static function delete_state( $user_id, $game_id, $token = '' ) {
-		$all = self::entries( $user_id );
-		if ( empty( $all[ $game_id ]['states'] ) ) {
-			return false;
-		}
-		$keep = array();
-		foreach ( $all[ $game_id ]['states'] as $entry ) {
-			if ( '' === $token || $entry['token'] === $token ) {
-				self::unlink_entry( $user_id, $game_id, $entry, array( 'state', 'shot' ) );
-			} else {
-				$keep[] = $entry;
+		return self::with_lock( $user_id, static function () use ( $user_id, $game_id, $token ) {
+			$all = self::entries( $user_id );
+			if ( empty( $all[ $game_id ]['states'] ) ) {
+				return false;
 			}
-		}
-		$all[ $game_id ]['states'] = $keep;
-		self::store( $user_id, $all );
-		return true;
+			$keep = array();
+			$removed = array();
+			foreach ( $all[ $game_id ]['states'] as $entry ) {
+				if ( '' === $token || $entry['token'] === $token ) {
+					$removed[] = $entry;
+				} else {
+					$keep[] = $entry;
+				}
+			}
+			$all[ $game_id ]['states'] = $keep;
+			if ( ! self::store( $user_id, $all ) ) { return self::write_error(); }
+			foreach ( $removed as $entry ) {
+				self::unlink_entry( $user_id, $game_id, $entry, array( 'state', 'shot' ) );
+			}
+			return true;
+		} );
 	}
 
 	/**
@@ -287,31 +325,41 @@ final class Saves {
 	 * @param string $hash     بصمة المحتوى الخام (يحسبها المتصفح لقرار المزامنة).
 	 * @return array|\WP_Error
 	 */
-	public static function put_sram( $user_id, $game_id, $tmp, $encoding, $hash ) {
-		$entry = array(
-			'token' => strtolower( wp_generate_password( 16, false ) ),
-			'time'  => time(),
-			'size'  => (int) filesize( $tmp ),
-			'enc'   => 'gzip' === $encoding ? 'gzip' : 'raw',
-			'hash'  => $hash,
-		);
-		self::user_dir( $user_id, true );
-		if ( ! self::move( $tmp, self::path( $user_id, $game_id, $entry['token'], 'srm' ) ) ) {
-			return new \WP_Error( 'rv_save_write', __( 'تعذّر حفظ الملف على الخادم.', 'retrovault-core' ), array( 'status' => 500 ) );
-		}
-		$all    = self::entries( $user_id );
-		$record = isset( $all[ $game_id ] ) ? $all[ $game_id ] : array(
-			'states' => array(),
-			'sram'   => null,
-		);
-		$old             = $record['sram'];
-		$record['sram']  = $entry;
-		$all[ $game_id ] = $record;
-		self::store( $user_id, $all );
-		if ( $old ) {
-			self::unlink_entry( $user_id, $game_id, $old, array( 'srm' ) );
-		}
-		return self::describe_sram( $entry );
+	public static function put_sram( $user_id, $game_id, $tmp, $encoding, $hash, $expected_hash = null ) {
+		return self::with_lock( $user_id, static function () use ( $user_id, $game_id, $tmp, $encoding, $hash, $expected_hash ) {
+			$all    = self::entries( $user_id );
+			$record = isset( $all[ $game_id ] ) ? $all[ $game_id ] : array( 'states' => array(), 'sram' => null );
+			$old    = $record['sram'];
+			$current_hash = $old ? (string) $old['hash'] : '';
+			if ( null !== $expected_hash && $current_hash !== $expected_hash && $current_hash !== $hash ) {
+				return new \WP_Error( 'rv_sram_conflict', __( 'تغيّر حفظ هذه اللعبة على جهاز آخر. أعد فتح اللعبة للمزامنة.', 'retrovault-core' ), array( 'status' => 409 ) );
+			}
+			if ( $old && $current_hash === $hash ) {
+				return self::describe_sram( $old );
+			}
+			$entry = array(
+				'token' => strtolower( wp_generate_password( 16, false ) ),
+				'time'  => time(),
+				'size'  => (int) filesize( $tmp ),
+				'enc'   => 'gzip' === $encoding ? 'gzip' : 'raw',
+				'hash'  => $hash,
+			);
+			self::user_dir( $user_id, true );
+			if ( ! self::move( $tmp, self::path( $user_id, $game_id, $entry['token'], 'srm' ) ) ) {
+				return new \WP_Error( 'rv_save_write', __( 'تعذّر حفظ الملف على الخادم.', 'retrovault-core' ), array( 'status' => 500 ) );
+			}
+
+			$record['sram']  = $entry;
+			$all[ $game_id ] = $record;
+			if ( ! self::store( $user_id, $all ) ) {
+				self::unlink_entry( $user_id, $game_id, $entry, array( 'srm' ) );
+				return self::write_error();
+			}
+			if ( $old ) {
+				self::unlink_entry( $user_id, $game_id, $old, array( 'srm' ) );
+			}
+			return self::describe_sram( $entry );
+		} );
 	}
 
 	/**
@@ -319,14 +367,17 @@ final class Saves {
 	 * @param int $game_id رقم اللعبة.
 	 */
 	public static function delete_sram( $user_id, $game_id ) {
-		$all = self::entries( $user_id );
-		if ( empty( $all[ $game_id ]['sram'] ) ) {
-			return false;
-		}
-		self::unlink_entry( $user_id, $game_id, $all[ $game_id ]['sram'], array( 'srm' ) );
-		$all[ $game_id ]['sram'] = null;
-		self::store( $user_id, $all );
-		return true;
+		return self::with_lock( $user_id, static function () use ( $user_id, $game_id ) {
+			$all = self::entries( $user_id );
+			if ( empty( $all[ $game_id ]['sram'] ) ) {
+				return false;
+			}
+			$old = $all[ $game_id ]['sram'];
+			$all[ $game_id ]['sram'] = null;
+			if ( ! self::store( $user_id, $all ) ) { return self::write_error(); }
+			self::unlink_entry( $user_id, $game_id, $old, array( 'srm' ) );
+			return true;
+		} );
 	}
 
 	/**
@@ -669,7 +720,8 @@ final class Saves {
 		if ( '' !== $token && ! self::valid_token( $token ) ) {
 			return new \WP_Error( 'rv_bad_slot', __( 'خانة حفظ غير صالحة.', 'retrovault-core' ), array( 'status' => 400 ) );
 		}
-		self::delete_state( get_current_user_id(), $post->ID, $token );
+		$deleted = self::delete_state( get_current_user_id(), $post->ID, $token );
+		if ( is_wp_error( $deleted ) ) { return $deleted; }
 		return self::rest_summary( $request );
 	}
 
@@ -720,8 +772,12 @@ final class Saves {
 		if ( is_wp_error( $check ) ) {
 			return $check;
 		}
+		$base = $request->get_param( 'base' );
+		if ( ! is_string( $base ) || ! preg_match( '/^[a-f0-9\\-]{0,40}$/', $base ) ) {
+			return new \WP_Error( 'rv_sram_base_required', __( 'حدّث صفحة اللعبة قبل مزامنة الحفظ.', 'retrovault-core' ), array( 'status' => 428 ) );
+		}
 		$hash   = substr( preg_replace( '/[^a-f0-9\-]/', '', strtolower( (string) $request->get_param( 'hash' ) ) ), 0, 40 );
-		$result = self::put_sram( get_current_user_id(), $post->ID, $files['sram']['tmp_name'], $enc, $hash );
+		$result = self::put_sram( get_current_user_id(), $post->ID, $files['sram']['tmp_name'], $enc, $hash, $base );
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
@@ -733,7 +789,8 @@ final class Saves {
 		if ( is_wp_error( $post ) ) {
 			return $post;
 		}
-		self::delete_sram( get_current_user_id(), $post->ID );
+		$deleted = self::delete_sram( get_current_user_id(), $post->ID );
+		if ( is_wp_error( $deleted ) ) { return $deleted; }
 		return rest_ensure_response( array( 'exists' => false ) );
 	}
 
@@ -747,7 +804,7 @@ final class Saves {
 		if ( ! $record['sram'] ) {
 			return new \WP_Error( 'rv_no_save', __( 'لا يوجد حفظ لهذه اللعبة في حسابك.', 'retrovault-core' ), array( 'status' => 404 ) );
 		}
-		return self::send_file( self::path( $user_id, $game_id, $record['sram']['token'], 'srm' ), 'application/octet-stream', $record['sram']['enc'] );
+		return self::send_file( self::path( $user_id, $game_id, $record['sram']['token'], 'srm' ), 'application/octet-stream', $record['sram']['enc'], $record['sram']['hash'] );
 	}
 
 	/**
@@ -758,7 +815,7 @@ final class Saves {
 	 * @param string $enc  gzip|raw (يُرسل في X-RV-Encoding ويفك المتصفح الضغط بنفسه).
 	 * @return \WP_Error عند غياب الملف.
 	 */
-	private static function send_file( $file, $type, $enc ) {
+	private static function send_file( $file, $type, $enc, $hash = '' ) {
 		if ( '' === $file || ! is_readable( $file ) ) {
 			return new \WP_Error( 'rv_no_save', __( 'ملف الحفظ غير موجود.', 'retrovault-core' ), array( 'status' => 404 ) );
 		}
@@ -775,6 +832,7 @@ final class Saves {
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Cache-Control: private, no-store' );
 		header( 'X-RV-Encoding: ' . $enc );
+		if ( '' !== $hash ) { header( 'X-RV-Hash: ' . $hash ); }
 		readfile( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile
 		exit;
 	}

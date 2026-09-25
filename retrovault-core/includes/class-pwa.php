@@ -241,6 +241,7 @@ li a{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12
 			return Promise.all(keys.map(function (k) { return cache.match(k).then(function (r) { return r.json(); }); }));
 		});
 	}).then(function (games) {
+		games = games.filter(function (g) { return g && g.protocol === 2; }).map(function (g) { return g.data; });
 		games.sort(function (a, b) { return b.time - a.time; });
 		games.forEach(function (g) {
 			var li = document.createElement('li');
@@ -278,22 +279,23 @@ li a{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12
 		printf( '<link rel="apple-touch-icon" href="%s">' . "\n", esc_url( $icons[0]['src'] ) );
 	}
 
-	public static function assets() {
-		if ( ! self::enabled() ) {
-			return;
-		}
-		wp_enqueue_script( 'retrovault-pwa', RETROVAULT_URL . 'assets/pwa.js', array(), RETROVAULT_VERSION, array( 'in_footer' => true, 'strategy' => 'defer' ) );
-		wp_localize_script(
-			'retrovault-pwa',
-			'RVPWA',
-			array(
-				'sw'    => self::url( 'sw' ),
-				'scope' => self::scope(),
-				'cache' => self::OFFLINE_CACHE,
-				// بصمة الحساب الحالي (لا تكشف رقمه): عند تغيّرها تُحذف الصفحات المحفوظة للحساب السابق.
-				'user'  => is_user_logged_in() ? substr( wp_hash( 'rv-pwa|' . get_current_user_id() ), 0, 12 ) : '',
-			)
+	/** Configuration shared by the theme and the standalone player. */
+	public static function client_config() {
+		return array(
+			'enabled' => self::enabled(),
+			'sw'      => self::url( 'sw' ),
+			'scope'   => self::scope(),
+			'cache'   => self::OFFLINE_CACHE,
+			'dataPath' => Settings::data_path(),
+			'assets'  => RETROVAULT_URL . 'assets/',
+			'user'    => is_user_logged_in() ? substr( wp_hash( 'rv-pwa|' . get_current_user_id() ), 0, 12 ) : '',
 		);
+	}
+
+	public static function assets() {
+		// Keep the small lifecycle script when disabled so existing installations are removed.
+		wp_enqueue_script( 'retrovault-pwa', RETROVAULT_URL . 'assets/pwa.js', array(), RETROVAULT_VERSION, array( 'in_footer' => true, 'strategy' => 'defer' ) );
+		wp_localize_script( 'retrovault-pwa', 'RVPWA', self::client_config() );
 	}
 
 	/**
@@ -316,8 +318,8 @@ li a{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12
 				'color' => $game['system'] ? $game['system']['color'] : '',
 			),
 		);
-		return 'window.RV_markOffline = function () { if (!window.caches) { return; } var M = '
-			. wp_json_encode( $marker, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP )
-			. '; M.data.time = Date.now(); caches.open(' . wp_json_encode( self::OFFLINE_CACHE ) . ').then(function (c) { return c.put(M.key, new Response(JSON.stringify(M.data), { headers: { "Content-Type": "application/json" } })); }).catch(function () {}); };';
+		$marker['rom']     = Roms::player_url( $game );
+		$marker['version'] = $game['rom']['ver'];
+		return 'window.RVOfflineGame = ' . wp_json_encode( $marker, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP ) . ';';
 	}
 }

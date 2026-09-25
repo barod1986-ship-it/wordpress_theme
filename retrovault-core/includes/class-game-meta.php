@@ -34,6 +34,7 @@ final class Game_Meta {
 		add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
 		add_filter( 'default_hidden_meta_boxes', array( __CLASS__, 'show_excerpt' ), 10, 2 );
+		add_filter( 'rest_pre_insert_' . Post_Types::GAME, array( __CLASS__, 'validate_rest' ), 10, 2 );
 	}
 
 	/**
@@ -74,6 +75,9 @@ final class Game_Meta {
 				'default'       => $def['default'],
 				'auth_callback' => $auth,
 				'show_in_rest'  => true,
+				'sanitize_callback' => static function ( $value ) use ( $name, $def ) {
+					return self::sanitize( $name, $value, $def, null );
+				},
 			);
 			if ( 'array' === $def['type'] ) {
 				$args['show_in_rest'] = array(
@@ -172,14 +176,28 @@ final class Game_Meta {
 		$input       = ( isset( $_POST['rv'] ) && is_array( $_POST['rv'] ) ) ? wp_unslash( $_POST['rv'] ) : array();
 		$system      = Games::system_for( $post_id );
 		$old_version = (string) get_post_meta( $post_id, self::PREFIX . 'version', true );
+		$rom_error   = null;
 
 		foreach ( self::fields() as $name => $def ) {
 			$raw = isset( $input[ $name ] ) ? $input[ $name ] : null;
+			if ( 'rom_id' === $name ) {
+				$valid = Roms::validate_attachment( absint( $raw ), true );
+				if ( is_wp_error( $valid ) ) {
+					$rom_error = $valid;
+					continue; // لا تستبدل الملف الحالي بمرفق غير صالح أو غير مسموح.
+				}
+			}
 			update_post_meta( $post_id, self::PREFIX . $name, self::sanitize( $name, $raw, $def, $system ) );
 		}
 
 		Games::flush( $post_id );
 		self::check( $post_id );
+		if ( $rom_error ) {
+			$key      = 'rv_notices_' . get_current_user_id();
+			$messages = (array) get_transient( $key );
+			$messages[] = array( 'error', $rom_error->get_error_message() );
+			set_transient( $key, array_filter( $messages ), MINUTE_IN_SECONDS );
+		}
 
 		$new_version = (string) get_post_meta( $post_id, self::PREFIX . 'version', true );
 		if ( '' !== $new_version && $new_version !== $old_version ) {
@@ -226,10 +244,29 @@ final class Game_Meta {
 		if ( 'status' === $name && ! array_key_exists( $value, Games::statuses() ) ) {
 			$value = 'released';
 		}
-		if ( 'core' === $name && ( ! $system || ! in_array( $value, $system['cores'], true ) ) ) {
-			$value = '';
+		if ( 'core' === $name ) {
+			$cores = $system ? $system['cores'] : array();
+			if ( ! $system ) {
+				foreach ( Systems::all() as $entry ) {
+					$cores = array_merge( $cores, $entry['cores'] );
+				}
+			}
+			$value = in_array( $value, $cores, true ) ? $value : '';
 		}
 		return $value;
+	}
+
+	/** Validate the attachment before REST creates/updates any game data. */
+	public static function validate_rest( $post, $request ) {
+		$meta = $request->get_param( 'meta' );
+		$key  = self::PREFIX . 'rom_id';
+		if ( is_array( $meta ) && array_key_exists( $key, $meta ) ) {
+			$valid = Roms::validate_attachment( absint( $meta[ $key ] ), true );
+			if ( is_wp_error( $valid ) ) {
+				return $valid;
+			}
+		}
+		return $post;
 	}
 
 	/**

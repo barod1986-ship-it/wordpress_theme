@@ -32,11 +32,21 @@ final class Roms {
 	const WINDOW = 21600;
 
 	public static function init() {
+		add_filter( 'add_post_metadata', array( __CLASS__, 'guard_meta' ), 10, 4 );
+		add_filter( 'update_post_metadata', array( __CLASS__, 'guard_meta' ), 10, 4 );
 		// أي طريقة تربط ملفاً بلعبة (المحرر، REST، الاستيراد) تحميه فوراً.
 		add_action( 'added_post_meta', array( __CLASS__, 'on_meta' ), 10, 4 );
 		add_action( 'updated_post_meta', array( __CLASS__, 'on_meta' ), 10, 4 );
 		// وحفظ اللعبة يعيد المحاولة إن فشل النقل سابقاً.
 		add_action( 'save_post_' . Post_Types::GAME, array( __CLASS__, 'on_save' ), 30 );
+	}
+
+	/** Protect every metadata write path, including the classic custom-fields AJAX endpoint. */
+	public static function guard_meta( $check, $post_id, $key, $value ) {
+		if ( null !== $check || Game_Meta::PREFIX . 'rom_id' !== $key || Post_Types::GAME !== get_post_type( $post_id ) ) {
+			return $check;
+		}
+		return is_wp_error( self::validate_attachment( absint( $value ), get_current_user_id() > 0 ) ) ? false : $check;
 	}
 
 	/**
@@ -80,7 +90,7 @@ final class Roms {
 	 */
 	public static function protect( $attachment_id ) {
 		$attachment_id = (int) $attachment_id;
-		if ( 'attachment' !== get_post_type( $attachment_id ) ) {
+		if ( ! $attachment_id || is_wp_error( self::validate_attachment( $attachment_id ) ) ) {
 			return false;
 		}
 		$path = get_attached_file( $attachment_id );
@@ -111,6 +121,34 @@ final class Roms {
 					'post_status' => 'private',
 				)
 			);
+		}
+		return true;
+	}
+
+	/**
+	 * Validate both the file type and (for user input) permission over this attachment.
+	 * Background upgrades deliberately use only the structural validation.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function validate_attachment( $attachment_id, $check_permission = false ) {
+		$attachment_id = (int) $attachment_id;
+		if ( 0 === $attachment_id ) {
+			return true; // Removing the selection is allowed.
+		}
+		if ( 'attachment' !== get_post_type( $attachment_id ) ) {
+			return new \WP_Error( 'rv_invalid_rom', __( 'اختر ملف لعبة صالحاً من مكتبة الوسائط.', 'retrovault-core' ), array( 'status' => 400 ) );
+		}
+		if ( $check_permission && ! current_user_can( 'edit_post', $attachment_id ) ) {
+			return new \WP_Error( 'rv_rom_forbidden', __( 'لا تملك صلاحية استخدام هذا المرفق كملف لعبة.', 'retrovault-core' ), array( 'status' => 403 ) );
+		}
+		$name = (string) get_attached_file( $attachment_id );
+		if ( '' === $name ) {
+			$name = (string) wp_parse_url( (string) wp_get_attachment_url( $attachment_id ), PHP_URL_PATH );
+		}
+		$ext = strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $ext, Uploads::extensions(), true ) ) {
+			return new \WP_Error( 'rv_invalid_rom', __( 'هذا المرفق ليس ملف لعبة مدعوماً. الصور والمستندات لا تُنقل إلى مجلد الألعاب.', 'retrovault-core' ), array( 'status' => 400 ) );
 		}
 		return true;
 	}

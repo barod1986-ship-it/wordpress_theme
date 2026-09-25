@@ -178,7 +178,7 @@ printf 'sram' > "$TMP/sram.bin"
 rest "games/$GAME/rating" average -X POST -d rating=4
 rest "games/$GAME/favorite" favorite -X POST
 rest "games/$GAME/save" slot -F "state=@$TMP/state.bin" -F core=fceumm
-rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123
+rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123 -F base=
 rest me/notify email -H 'Content-Type: application/json' -d '{"email":true}'
 expect 200 /account/ "$TMP/member.jar"
 expect 302 /wp-admin/ "$TMP/member.jar"
@@ -200,6 +200,10 @@ if [ -n "$export_url" ] && curl -s -b "$TMP/admin.jar" -D "$TMP/headers" -o "$TM
 else
 	fail "CSV export did not return a CSV file"
 fi
+
+echo "== Regression tests"
+docker cp .github/scripts/regression.php "$WP:/var/www/html/wp-content/regression.php"
+wp eval-file wp-content/regression.php
 
 echo "== PHP log"
 # سطور الاتصال بـ wordpress.org لا تخص الإضافة (بيئات بلا إنترنت).
