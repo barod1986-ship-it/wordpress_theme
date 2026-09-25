@@ -73,6 +73,40 @@ final class Systems {
 	}
 
 	/**
+	 * النظام الذي يدل عليه امتداد ملف اللعبة، أو '' إن كان الامتداد مشتركاً بين أنظمة (bin، cue، iso...)
+	 * أو غير معروف. أول امتداد في قائمة النظام هو امتداده الأصلي: ‎.gb لـ Game Boy مع أن Game Boy Color
+	 * يقبله أيضاً.
+	 *
+	 * @param string   $ext  امتداد الملف.
+	 * @param string[] $keys الاختيار من هذه الأنظمة فقط (الموجودة في الموقع)؛ فارغة للكل.
+	 * @return string مفتاح النظام في السجل.
+	 */
+	public static function for_extension( $ext, $keys = array() ) {
+		$ext = strtolower( ltrim( (string) $ext, '.' ) );
+		if ( '' === $ext ) {
+			return '';
+		}
+		$any     = array();
+		$primary = array();
+		foreach ( self::all() as $key => $system ) {
+			if ( $keys && ! in_array( $key, $keys, true ) ) {
+				continue;
+			}
+			$exts = array_map( 'strtolower', (array) $system['ext'] );
+			if ( in_array( $ext, $exts, true ) ) {
+				$any[] = $key;
+				if ( $exts[0] === $ext ) {
+					$primary[] = $key;
+				}
+			}
+		}
+		if ( 1 === count( $any ) ) {
+			return $any[0];
+		}
+		return 1 === count( $primary ) ? $primary[0] : '';
+	}
+
+	/**
 	 * الأنظمة التي تُنشأ تلقائياً عند أول تفعيل (يمكن حذفها أو إضافة غيرها لاحقاً).
 	 *
 	 * @return string[]

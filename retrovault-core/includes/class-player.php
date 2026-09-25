@@ -349,10 +349,25 @@ window.RVCloud = <?php echo wp_json_encode( $cfg, $flags ); // phpcs:ignore Word
 		$style = sprintf( '--rv-ratio:%s;--rv-sys:%s', $ratio, $color );
 
 		if ( ! $game['playable'] ) {
+			$message = ( ! $game['rom']['id'] && '' === $game['rom']['raw_url'] )
+				? __( 'ملف هذه اللعبة لم يُرفع بعد.', 'retrovault-core' )
+				: __( 'هذه اللعبة غير جاهزة للتشغيل بعد.', 'retrovault-core' );
+			// لمن يحرّر اللعبة: ما الذي ينقصها، ورابط لإكماله.
+			$fix  = '';
+			$edit = current_user_can( 'edit_post', $game['id'] ) ? get_edit_post_link( $game['id'] ) : '';
+			if ( $edit ) {
+				$fix = sprintf(
+					'<a class="rv-player__fix" href="%1$s">%2$s</a>',
+					esc_url( $edit ),
+					/* translators: %s: what is missing */
+					esc_html( sprintf( __( 'أكملها من لوحة التحكم: %s', 'retrovault-core' ), implode( '، ', Game_Meta::problems( $game ) ) ) )
+				);
+			}
 			return sprintf(
-				'<div class="rv-player rv-player--empty" style="%1$s"><div class="rv-player__screen"><p class="rv-player__notice">%2$s</p></div></div>',
+				'<div class="rv-player rv-player--empty" style="%1$s"><div class="rv-player__screen"><p class="rv-player__notice">%2$s%3$s</p></div></div>',
 				esc_attr( $style ),
-				esc_html__( 'ملف هذه اللعبة لم يُرفع بعد.', 'retrovault-core' )
+				esc_html( $message ),
+				$fix // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- مُهرَّب أعلاه.
 			);
 		}
 
