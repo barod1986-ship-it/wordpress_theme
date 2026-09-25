@@ -222,6 +222,27 @@ add_filter(
 add_filter( 'excerpt_length', static function () { return 26; } );
 add_filter( 'excerpt_more', static function () { return '…'; } );
 
+/*
+ * وصف الرئيسية والمكتبة لمحركات البحث والمشاركة (الإضافة تطبعه): نص الترحيب نفسه في الرئيسية، وعدد
+ * الألعاب والأنظمة بعد وصف المكتبة.
+ */
+add_filter(
+	'retrovault_meta_description',
+	static function ( $text, $context ) {
+		if ( 'front' === $context ) {
+			$hero = trim( (string) rvt_mod( 'rvt_hero_text' ) );
+			return '' !== $hero ? $hero : $text;
+		}
+		if ( 'library' === $context && rvt_has_core() ) {
+			$totals = rvt_totals_sentence();
+			return '' !== $totals ? $text . ' ' . $totals : $text;
+		}
+		return $text;
+	},
+	10,
+	2
+);
+
 /* تنبيه عند غياب الإضافة */
 add_action(
 	'admin_notices',

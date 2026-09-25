@@ -169,6 +169,46 @@ check "the post preloads its featured image with the same srcset" \
 	"$(grep -m 1 -oP '<img [^>]*wp-post-image[^>]* srcset="\K[^"]+' "$TMP/post.html" || echo none)" \
 	"$(grep -m 1 -oP '<link rel="preload" [^>]*as="image" imagesrcset="\K[^"]+' "$TMP/post.html" || echo missing)"
 
+echo "== Search engines"
+# page <المسار>: تنزيل الصفحة، ثم has/hasnt <الوصف> <نمط> عليها.
+page() { curl -s -o "$TMP/seo.html" "$BASE$1"; cp "$TMP/seo.html" "$TMP/seo-$(printf '%s' "$1" | tr -c 'a-z0-9' '_').html"; }
+has() { if grep -qE "$2" "$TMP/seo.html"; then echo "ok $1"; else fail "$1"; fi; }
+hasnt() { if grep -qE "$2" "$TMP/seo.html"; then fail "$1"; else echo "ok $1"; fi; }
+noindex="name='robots' content='[^']*noindex"
+page /
+has "the home page has a description" '<meta name="description" content="[^"]+">'
+has "the home page names the site for search engines" '"@type":"WebSite"'
+page /games/
+has "the library has its canonical URL" "<link rel=\"canonical\" href=\"$BASE/games/\">"
+has "the library has a description" '<meta name="description" content="[^"]+">'
+has "the library has breadcrumb data" '"@type":"BreadcrumbList"'
+page '/games/?sort=rating&system=nes'
+has "filtered library views are not indexed" "$noindex"
+hasnt "filtered library views have no canonical URL" 'rel="canonical"'
+page /system/nes/
+has "a system page has its canonical URL" "<link rel=\"canonical\" href=\"$BASE/system/nes/\">"
+hasnt "a system page with games is indexed" "$noindex"
+page /system/gb/
+has "a system without games is not indexed" "$noindex"
+page /games/pixel-quest/
+has "the game page has breadcrumb data" '"@type":"BreadcrumbList"'
+has "the game is typed as a game app for Google" '"applicationCategory":"GameApplication"'
+page /devlog/
+has "the devlog has its canonical URL" "<link rel=\"canonical\" href=\"$BASE/devlog/\">"
+# كل بيانات JSON-LD صالحة.
+node -e 'const fs = require("fs"); let n = 0; for (const f of process.argv.slice(1)) { for (const m of fs.readFileSync(f, "utf8").matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) { JSON.parse(m[1]); n++; } } console.log("ok " + n + " JSON-LD blocks parse");' "$TMP"/seo-*.html || fail "a JSON-LD block does not parse"
+# أسماء الدخول لا تظهر للزوار: لا قائمة أعضاء في REST، وصفحات الكُتّاب تُحوَّل كلها بالرد نفسه.
+check "the REST user list is hidden from visitors" 404 "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/wp-json/wp/v2/users")"
+check "an author archive redirects to the devlog" "301 $BASE/devlog/" "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/?author=1")"
+check "a missing author answers the same" "301 $BASE/devlog/" "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/?author=999")"
+curl -s -o "$TMP/sitemap.xml" "$BASE/wp-sitemap.xml"
+curl -s -o "$TMP/pages.xml" "$BASE/wp-sitemap-posts-page-1.xml"
+if grep -q 'wp-sitemap-users' "$TMP/sitemap.xml" || grep -q '/account/' "$TMP/pages.xml"; then
+	fail "the sitemap lists author pages or the account page"
+else
+	echo "ok the sitemap has no author pages and no account page"
+fi
+
 echo "== Game file protection"
 # status <وسائط curl...>: رمز الرد فقط. check <الوصف> <المتوقع> <الفعلي>.
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
