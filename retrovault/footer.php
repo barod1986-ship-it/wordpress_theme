@@ -28,7 +28,7 @@ $rvt_systems = rvt_has_core() ? rv_get_systems( true ) : array();
 			<?php if ( $rvt_systems ) : ?>
 				<nav class="site-footer__col" aria-labelledby="footer-systems">
 					<h2 id="footer-systems"><?php esc_html_e( 'الأنظمة', 'retrovault' ); ?></h2>
-					<ul>
+					<ul<?php echo count( $rvt_systems ) > 5 ? ' class="site-footer__list--cols"' : ''; ?>>
 						<?php foreach ( $rvt_systems as $rvt_system ) : ?>
 							<li><a href="<?php echo esc_url( $rvt_system['link'] ); ?>"><?php echo esc_html( $rvt_system['name'] ); ?></a></li>
 						<?php endforeach; ?>

@@ -16,7 +16,7 @@ if ( ! $rvt_systems ) {
 $rvt_current = isset( $args['current'] ) ? (string) $args['current'] : '';
 $rvt_compact = ! empty( $args['compact'] );
 ?>
-<nav class="slots<?php echo $rvt_compact ? ' slots--compact' : ''; ?>" aria-label="<?php esc_attr_e( 'تصفّح حسب النظام', 'retrovault' ); ?>">
+<nav class="slots<?php echo $rvt_compact ? ' slots--compact' : ''; ?>" aria-label="<?php esc_attr_e( 'تصفّح حسب النظام', 'retrovault' ); ?>"<?php echo $rvt_compact ? ' data-filters-sync="slots"' : ''; ?>>
 	<?php if ( $rvt_compact ) : ?>
 		<a class="slot slot--all" href="<?php echo esc_url( rvt_library_url() ); ?>" <?php echo '' === $rvt_current ? 'aria-current="page"' : ''; ?>>
 			<span class="slot__short"><?php esc_html_e( 'الكل', 'retrovault' ); ?></span>

@@ -42,6 +42,7 @@ add_action(
 		RetroVault\Settings::init();
 		RetroVault\Post_Types::init();
 		RetroVault\Game_Meta::init();
+		RetroVault\Games::init();
 		RetroVault\Uploads::init();
 		RetroVault\Roms::init();
 		RetroVault\Ratings::init();

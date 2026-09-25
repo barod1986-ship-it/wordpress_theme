@@ -21,6 +21,8 @@ while ( have_posts() ) :
 	$rvt_controls = ( $rvt_sys && $rvt_sys['key'] ) ? rv_get_controls( $rvt_sys['key'] ) : array();
 	$rvt_rating   = $rvt_game['rating'];
 	$rvt_style    = sprintf( '--sys:%1$s;--rv-ratio:%2$s', $rvt_color, $rvt_sys ? $rvt_sys['ratio'] : '4/3' );
+	// صور الصفحة (العريضة واللقطات) باستعلامين بدل استعلامين لكل صورة.
+	_prime_post_caches( array_filter( array_merge( array( $rvt_game['banner_id'] ), $rvt_game['screenshots'] ) ), false, true );
 	?>
 	<article id="post-<?php the_ID(); ?>" <?php post_class( 'game' ); ?> style="<?php echo esc_attr( $rvt_style ); ?>">
 		<div class="shell">

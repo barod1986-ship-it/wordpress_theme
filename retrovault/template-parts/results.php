@@ -8,27 +8,42 @@
 defined( 'ABSPATH' ) || exit;
 
 global $wp_query;
-$rvt_total = (int) $wp_query->found_posts;
-$rvt_f     = rv_current_filters();
-$rvt_all   = wp_count_posts( 'rv_game' );
-$rvt_empty = empty( $rvt_all->publish );
+$rvt_total  = (int) $wp_query->found_posts;
+$rvt_f      = rv_current_filters();
+$rvt_all    = wp_count_posts( 'rv_game' );
+$rvt_empty  = empty( $rvt_all->publish );
+$rvt_active = '' !== $rvt_f['q'] || 'newest' !== $rvt_f['sort'] || rvt_active_filters( $rvt_f );
 ?>
-<div id="rv-results" class="results" aria-live="polite">
+<div id="rv-results" class="results" data-count="<?php echo esc_attr( have_posts() ? rvt_count( $rvt_total, 'games' ) : __( 'لا نتائج', 'retrovault' ) ); ?>">
 	<?php if ( have_posts() ) : ?>
-		<p class="results__count">
-			<?php
-			echo esc_html( rvt_count( $rvt_total, 'games' ) );
-			if ( '' !== $rvt_f['q'] ) {
-				/* translators: %s: search term */
-				echo ' ' . esc_html( sprintf( __( 'تطابق «%s»', 'retrovault' ), $rvt_f['q'] ) );
-			}
-			?>
-		</p>
+		<div class="results__bar">
+			<p class="results__count">
+				<?php
+				echo esc_html( rvt_count( $rvt_total, 'games' ) );
+				if ( '' !== $rvt_f['q'] ) {
+					/* translators: %s: search term */
+					echo ' ' . esc_html( sprintf( __( 'تطابق «%s»', 'retrovault' ), $rvt_f['q'] ) );
+				}
+				?>
+			</p>
+			<?php if ( $rvt_active ) : ?>
+				<a class="results__reset" href="<?php echo esc_url( rvt_library_url() ); ?>"><?php esc_html_e( 'إزالة الفلاتر', 'retrovault' ); ?></a>
+			<?php endif; ?>
+		</div>
 		<div class="cart-grid">
 			<?php
+			$rvt_i = 0;
 			while ( have_posts() ) :
 				the_post();
-				get_template_part( 'template-parts/game-card', null, array( 'heading' => 'h2' ) );
+				// الصف الأول ظاهر فور فتح الصفحة: أغلفته لا تُؤجَّل.
+				get_template_part(
+					'template-parts/game-card',
+					null,
+					array(
+						'heading' => 'h2',
+						'eager'   => $rvt_i++ < 6,
+					)
+				);
 			endwhile;
 			?>
 		</div>

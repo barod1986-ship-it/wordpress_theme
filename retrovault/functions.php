@@ -145,6 +145,18 @@ add_action(
 	9
 );
 
+/*
+ * كلاس js على <html> قبل أول رسم: ما يطويه السكربت (فلاتر المكتبة على الجوال) يظهر مطوياً من البداية
+ * بدل أن يُطوى أمام الزائر فتقفز الصفحة. بدون JavaScript يبقى كل شيء ظاهراً ويعمل كنموذج عادي.
+ */
+add_action(
+	'wp_head',
+	static function () {
+		wp_print_inline_script_tag( "document.documentElement.classList.add('js');" );
+	},
+	1
+);
+
 add_filter(
 	'body_class',
 	static function ( $classes ) {

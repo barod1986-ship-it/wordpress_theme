@@ -18,6 +18,69 @@ final class Games {
 	/** @var array<int,array> */
 	private static $systems = array();
 
+	public static function init() {
+		add_filter( 'the_posts', array( __CLASS__, 'prime_query' ), 10, 2 );
+		add_filter( 'posts_where', array( __CLASS__, 'updated_where' ), 10, 2 );
+	}
+
+	/**
+	 * كل بطاقة تقرأ غلاف لعبتها وملفها (مرفقان)، أي استعلامين لكل بطاقة. نجلب مرفقات القائمة كلها
+	 * مرة واحدة قبل العرض. لا شيء لاستعلامات لا تطلب الحقول (الأرقام فقط، أو خرائط الموقع).
+	 *
+	 * @param \WP_Post[] $posts النتائج.
+	 * @param \WP_Query  $query الاستعلام.
+	 * @return \WP_Post[]
+	 */
+	public static function prime_query( $posts, $query ) {
+		if ( $posts && $query instanceof \WP_Query && in_array( $query->get( 'fields' ), array( '', 'all' ), true ) && false !== $query->get( 'update_post_meta_cache' ) ) {
+			self::prime( $posts );
+		}
+		return $posts;
+	}
+
+	/**
+	 * @param \WP_Post[] $posts ألعاب (يُتجاهل ما سواها).
+	 */
+	public static function prime( $posts ) {
+		$ids = array();
+		foreach ( (array) $posts as $post ) {
+			if ( $post instanceof \WP_Post && Post_Types::GAME === $post->post_type ) {
+				$ids[] = (int) $post->ID;
+			}
+		}
+		if ( ! $ids ) {
+			return;
+		}
+		// لا يعيد جلب ما في الذاكرة، وووردبريس يتخطاها بعدنا.
+		update_meta_cache( 'post', $ids );
+		$files = array();
+		foreach ( $ids as $id ) {
+			foreach ( array( '_thumbnail_id', Game_Meta::PREFIX . 'rom_id' ) as $key ) {
+				$file = (int) get_post_meta( $id, $key, true );
+				if ( $file ) {
+					$files[] = $file;
+				}
+			}
+		}
+		if ( $files ) {
+			_prime_post_caches( array_unique( $files ), false, true );
+		}
+	}
+
+	/**
+	 * «حُدّثت» = عُدّلت بعد يوم على الأقل من نشرها، لا مجرد لعبة جديدة (انظر query()).
+	 *
+	 * @param string    $where شرط الاستعلام.
+	 * @param \WP_Query $query الاستعلام.
+	 */
+	public static function updated_where( $where, $query ) {
+		if ( $query instanceof \WP_Query && $query->get( 'rv_updated_only' ) ) {
+			global $wpdb;
+			$where .= " AND {$wpdb->posts}.post_modified_gmt > DATE_ADD({$wpdb->posts}.post_date_gmt, INTERVAL 1 DAY)";
+		}
+		return $where;
+	}
+
 	/**
 	 * @param int $post_id رقم لعبة، أو 0 لمسح الكل.
 	 */
@@ -346,22 +409,24 @@ final class Games {
 	/**
 	 * استعلام ألعاب للرفوف والأقسام.
 	 *
-	 * @param array $args sort, number, system, genre, featured, rated_only, played_only, exclude.
+	 * @param array $args sort, number, system, genre, featured, rated_only, played_only, trending,
+	 *                    updated_only (عُدّلت بعد نشرها بيوم فأكثر)، exclude.
 	 * @return \WP_Query
 	 */
 	public static function query( $args = array() ) {
 		$a = wp_parse_args(
 			$args,
 			array(
-				'sort'        => 'newest',
-				'number'      => 8,
-				'system'      => '',
-				'genre'       => '',
-				'featured'    => false,
-				'rated_only'  => false,
-				'played_only' => false,
-				'trending'    => false,
-				'exclude'     => array(),
+				'sort'         => 'newest',
+				'number'       => 8,
+				'system'       => '',
+				'genre'        => '',
+				'featured'     => false,
+				'rated_only'   => false,
+				'played_only'  => false,
+				'trending'     => false,
+				'updated_only' => false,
+				'exclude'      => array(),
 			)
 		);
 
@@ -405,6 +470,7 @@ final class Games {
 				'no_found_rows'       => true,
 				'ignore_sticky_posts' => true,
 				'post__not_in'        => array_map( 'absint', (array) $a['exclude'] ),
+				'rv_updated_only'     => (bool) $a['updated_only'],
 			),
 			Query::sort_args( $a['sort'], $meta )
 		);

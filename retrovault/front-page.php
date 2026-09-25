@@ -117,26 +117,25 @@ if ( rvt_mod( 'rvt_show_played' ) ) {
 }
 
 if ( rvt_mod( 'rvt_show_updated' ) ) {
-	$rvt_updated = rv_query_games(
+	// ألعاب عُدّلت بعد نشرها (لا مجرد جديدة)، وليست في «وصلت حديثاً» حتى لا يتكرر الرف نفسه.
+	get_template_part(
+		'template-parts/shelf',
+		null,
 		array(
-			'sort'   => 'updated',
-			'number' => 6,
+			'id'        => 'shelf-updated',
+			'title'     => __( 'حُدّثت مؤخراً', 'retrovault' ),
+			'query'     => rv_query_games(
+				array(
+					'sort'         => 'updated',
+					'number'       => 6,
+					'updated_only' => true,
+					'exclude'      => wp_list_pluck( $rvt_new->posts, 'ID' ),
+				)
+			),
+			'link'      => add_query_arg( 'sort', 'updated', $rvt_library ),
+			'link_text' => __( 'كل التحديثات', 'retrovault' ),
 		)
 	);
-	// نعرض الرف فقط إذا اختلف ترتيبه عن «وصلت حديثاً» (أي أن لعبة قديمة حُدّثت).
-	if ( wp_list_pluck( $rvt_updated->posts, 'ID' ) !== wp_list_pluck( $rvt_new->posts, 'ID' ) ) {
-		get_template_part(
-			'template-parts/shelf',
-			null,
-			array(
-				'id'        => 'shelf-updated',
-				'title'     => __( 'حُدّثت مؤخراً', 'retrovault' ),
-				'query'     => $rvt_updated,
-				'link'      => add_query_arg( 'sort', 'updated', $rvt_library ),
-				'link_text' => __( 'كل التحديثات', 'retrovault' ),
-			)
-		);
-	}
 }
 ?>
 
