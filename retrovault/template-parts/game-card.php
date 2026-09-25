@@ -33,7 +33,7 @@ $rvt_rating  = $rvt_game['rating']['count'] ? number_format_i18n( $rvt_game['rat
 							'alt'     => '',
 							'loading' => empty( $args['eager'] ) ? 'lazy' : false,
 						),
-						'(max-width: 600px) 40vw, 170px'
+						rvt_card_sizes()
 					);
 				} else {
 					echo '<div class="cart__art cart__art--blank" aria-hidden="true"><span>' . esc_html( $rvt_sys ? $rvt_sys['short'] : '?' ) . '</span></div>';

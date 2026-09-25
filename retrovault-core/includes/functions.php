@@ -46,6 +46,21 @@ function rv_player( $post = null ) {
 }
 
 /**
+ * الصورة التي يعرضها المشغّل قبل بدء اللعب، لقالب يضع المشغّل أعلى الصفحة ويريد طلبها مبكراً (preload).
+ *
+ * @param int|WP_Post|null $post اللعبة.
+ * @return string الرابط، أو نص فارغ إن لم يكن للعبة مشغّل أو صورة.
+ */
+function rv_get_poster_url( $post = null ) {
+	$game = Games::get( $post );
+	if ( ! $game || ! $game['playable'] ) {
+		return '';
+	}
+	$poster = Games::poster( $game );
+	return $poster['url'];
+}
+
+/**
  * استعلام ألعاب جاهز للرفوف: sort (newest|rating|plays|updated|year|title), number, system, genre, featured...
  *
  * @param array $args الوسائط.

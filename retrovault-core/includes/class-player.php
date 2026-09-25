@@ -381,7 +381,8 @@ window.RVCloud = <?php echo wp_json_encode( $cfg, $flags ); // phpcs:ignore Word
 			<div class="rv-player__screen">
 				<button type="button" class="rv-player__start" data-rv-start>
 					<?php if ( $poster['url'] ) : ?>
-						<img class="rv-player__poster<?php echo $poster['pixel'] ? ' is-pixel' : ''; ?>" src="<?php echo esc_url( $poster['url'] ); ?>" alt="" decoding="async">
+						<?php // أكبر صورة في أعلى صفحة اللعبة: تُطلب مع الخطوط بدل انتظار دورها بعدها. ?>
+						<img class="rv-player__poster<?php echo $poster['pixel'] ? ' is-pixel' : ''; ?>" src="<?php echo esc_url( $poster['url'] ); ?>" alt="" decoding="async" fetchpriority="high">
 					<?php endif; ?>
 					<span class="rv-player__cta"><?php echo self::icon( 'play' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span><?php esc_html_e( 'ابدأ اللعب', 'retrovault-core' ); ?></span></span>
 					<span class="rv-player__hint"><?php esc_html_e( 'يعمل داخل المتصفح — لوحة المفاتيح أو يد التحكم أو اللمس', 'retrovault-core' ); ?></span>
