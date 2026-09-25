@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RVT_VERSION', '1.14.0' );
+define( 'RVT_VERSION', '1.15.0' );
 
 require_once get_template_directory() . '/inc/icons.php';
 require_once get_template_directory() . '/inc/customizer.php';
