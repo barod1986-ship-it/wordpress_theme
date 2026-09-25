@@ -122,4 +122,9 @@ $meta['rom_url'] = 'https://example.com/unprotected-fallback.nes';
 $rom = \RetroVault\Games::rom( $game_id, $meta );
 rv_assert( '' === $rom['url'] && '' === $rom['raw_url'], 'failed attachment protection cannot fall back to any public URL' );
 rv_assert( ! Roms::is_protected_path( dirname( get_attached_file( $owned ) ) . '/../' . basename( $original ) ), 'a directory prefix alone never establishes protection' );
+rv_assert(
+	'nes' === \RetroVault\Systems::for_extension( 'NES' ) && 'gb' === \RetroVault\Systems::for_extension( '.gb' ) && 'gbc' === \RetroVault\Systems::for_extension( 'gb', array( 'gbc' ) )
+		&& '' === \RetroVault\Systems::for_extension( 'bin' ) && '' === \RetroVault\Systems::for_extension( 'cue' ) && '' === \RetroVault\Systems::for_extension( 'zip' ),
+	'a game system is guessed only from an unambiguous file extension'
+);
 WP_CLI::success( 'Security, REST, ROM authorization and save-persistence regressions passed.' );

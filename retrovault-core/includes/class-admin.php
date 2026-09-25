@@ -61,7 +61,10 @@ final class Admin {
 					echo ' <span class="rv-admin-badge">' . esc_html__( 'مميزة', 'retrovault-core' ) . '</span>';
 				}
 				if ( ! $game['playable'] ) {
-					echo '<br><span class="rv-admin-warn">' . esc_html__( 'غير قابلة للتشغيل', 'retrovault-core' ) . '</span>';
+					$problems = Game_Meta::problems( $game );
+					echo '<br><span class="rv-admin-warn">' . esc_html( $problems ? implode( '، ', $problems ) : __( 'غير قابلة للتشغيل', 'retrovault-core' ) ) . '</span>';
+				} elseif ( Game_Meta::ext_mismatch( $game ) ) {
+					echo '<br><span class="rv-admin-warn">' . esc_html__( 'امتداد ملفها غير معتاد لنظامها', 'retrovault-core' ) . '</span>';
 				}
 				break;
 			case 'rv_rating':

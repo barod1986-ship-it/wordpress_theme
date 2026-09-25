@@ -191,7 +191,8 @@ final class Game_Meta {
 		}
 
 		Games::flush( $post_id );
-		self::check( $post_id );
+		$auto = self::auto_system( $post_id );
+		self::check( $post_id, $auto ? array( array( 'info', sprintf( /* translators: %s: system name */ __( 'اختير نظام «%s» تلقائياً من امتداد ملف اللعبة. غيّره من صندوق «الأنظمة» إن لم يكن صحيحاً.', 'retrovault-core' ), $auto ) ) ) : array() );
 		if ( $rom_error ) {
 			$key      = 'rv_notices_' . get_current_user_id();
 			$messages = (array) get_transient( $key );
@@ -270,16 +271,74 @@ final class Game_Meta {
 	}
 
 	/**
-	 * فحص ما بعد الحفظ: تنبيه عند نقص النظام أو الملف أو عدم تطابق الامتداد.
+	 * لعبة بلا نظام وامتداد ملفها يدل على نظام واحد من أنظمة الموقع (‎.nes ← NES): يُختار تلقائياً.
+	 * الامتدادات المشتركة (bin، cue، iso، zip...) تبقى لاختيار المحرر.
 	 *
 	 * @param int $post_id رقم اللعبة.
+	 * @return string اسم النظام المختار، أو '' إن لم يُختر شيء.
 	 */
-	private static function check( $post_id ) {
+	private static function auto_system( $post_id ) {
+		$game = Games::get( $post_id );
+		if ( ! $game || $game['system'] || '' === $game['rom']['ext'] ) {
+			return '';
+		}
+		$by_key = array();
+		foreach ( Games::systems( false ) as $system ) {
+			if ( $system['key'] && ! isset( $by_key[ $system['key'] ] ) ) {
+				$by_key[ $system['key'] ] = $system;
+			}
+		}
+		$key = Systems::for_extension( $game['rom']['ext'], array_keys( $by_key ) );
+		if ( '' === $key ) {
+			return '';
+		}
+		wp_set_object_terms( $post_id, (int) $by_key[ $key ]['term_id'], Post_Types::SYSTEM );
+		Games::flush( $post_id );
+		return $by_key[ $key ]['name'];
+	}
+
+	/**
+	 * لماذا لا تعمل اللعبة للزوار (فارغة إن كانت جاهزة). للوحة التحكم ولرسالة المشغّل عند المحرر.
+	 *
+	 * @param array $game بيانات اللعبة (Games::get).
+	 * @return string[]
+	 */
+	public static function problems( $game ) {
+		$out = array();
+		if ( '' === $game['rom']['url'] ) {
+			$out[] = $game['rom']['id'] ? __( 'ملفها مفقود', 'retrovault-core' ) : __( 'لم يُرفع ملفها', 'retrovault-core' );
+		}
+		if ( ! $game['system'] ) {
+			$out[] = __( 'لم يُختر نظامها', 'retrovault-core' );
+		} elseif ( '' === $game['system']['ejs'] ) {
+			$out[] = __( 'نظامها غير مربوط بمحاكٍ', 'retrovault-core' );
+		}
+		return $out;
+	}
+
+	/**
+	 * هل امتداد الملف غير معتاد للنظام المختار؟ (اللعبة قد تعمل، لكنه غالباً خطأ في اختيار النظام.)
+	 *
+	 * @param array $game بيانات اللعبة.
+	 */
+	public static function ext_mismatch( $game ) {
+		if ( ! $game['system'] || '' === $game['rom']['ext'] || ! $game['system']['ext'] ) {
+			return false;
+		}
+		return ! in_array( $game['rom']['ext'], array_merge( $game['system']['ext'], array( 'zip', '7z' ) ), true );
+	}
+
+	/**
+	 * فحص ما بعد الحفظ: تنبيه عند نقص النظام أو الملف أو عدم تطابق الامتداد.
+	 *
+	 * @param int   $post_id  رقم اللعبة.
+	 * @param array $messages رسائل تسبقها (مثل اختيار النظام تلقائياً).
+	 */
+	private static function check( $post_id, $messages = array() ) {
 		$game = Games::get( $post_id );
 		if ( ! $game ) {
 			return;
 		}
-		$messages = array();
 
 		if ( ! $game['system'] ) {
 			$messages[] = array( 'warning', __( 'اختر نظاماً للعبة من صندوق «الأنظمة» حتى يعرف الموقع أي محاكٍ يستخدم.', 'retrovault-core' ) );
@@ -289,20 +348,21 @@ final class Game_Meta {
 
 		if ( '' === $game['rom']['url'] ) {
 			$messages[] = $game['rom']['id'] ? array( 'error', __( 'ملف اللعبة مفقود أو تعذّرت حمايته. أوقفنا تشغيله وتنزيله؛ تحقّق من الملف وصلاحيات مجلد الرفع ثم احفظ اللعبة مجدداً.', 'retrovault-core' ) ) : array( 'warning', __( 'لم يُحدَّد ملف اللعبة بعد؛ سيظهر المشغّل برسالة «غير متاح» إلى أن ترفعه.', 'retrovault-core' ) );
-		} elseif ( $game['system'] && $game['rom']['ext'] ) {
+		} elseif ( self::ext_mismatch( $game ) ) {
 			$allowed = array_merge( $game['system']['ext'], array( 'zip', '7z' ) );
-			if ( ! in_array( $game['rom']['ext'], $allowed, true ) ) {
-				$messages[] = array(
-					'error',
-					sprintf(
-						/* translators: 1: extension, 2: system name, 3: expected extensions */
-						__( 'امتداد الملف ‎.%1$s غير معتاد لنظام %2$s. الامتدادات المتوقعة: %3$s', 'retrovault-core' ),
-						$game['rom']['ext'],
-						$game['system']['name'],
-						'.' . implode( ' .', $allowed )
-					),
-				);
+			$message = sprintf(
+				/* translators: 1: extension, 2: system name, 3: expected extensions */
+				__( 'امتداد الملف ‎.%1$s غير معتاد لنظام %2$s. الامتدادات المتوقعة: %3$s', 'retrovault-core' ),
+				$game['rom']['ext'],
+				$game['system']['name'],
+				'.' . implode( ' .', $allowed )
+			);
+			$right = Systems::get( Systems::for_extension( $game['rom']['ext'] ) );
+			if ( $right ) {
+				/* translators: %s: system name */
+				$message .= ' ' . sprintf( __( 'الملف يناسب نظام %s.', 'retrovault-core' ), $right['name'] );
 			}
+			$messages[] = array( 'error', $message );
 		}
 
 		if ( $messages ) {
@@ -341,7 +401,58 @@ final class Game_Meta {
 
 	public static function boxes() {
 		add_meta_box( 'rv_game_data', __( 'بيانات اللعبة', 'retrovault-core' ), array( __CLASS__, 'render' ), Post_Types::GAME, 'normal', 'high' );
+		add_meta_box( 'rv_game_ready', __( 'جاهزية اللعبة', 'retrovault-core' ), array( __CLASS__, 'render_ready' ), Post_Types::GAME, 'side', 'core' );
 		add_meta_box( 'rv_game_side', __( 'العرض والإحصائيات', 'retrovault-core' ), array( __CLASS__, 'render_side' ), Post_Types::GAME, 'side', 'default' );
+	}
+
+	/**
+	 * نص الحالة لقارئات الشاشة (العلامة ✓ ✕ مرسومة بـ CSS).
+	 *
+	 * @return array<string,string>
+	 */
+	private static function ready_states() {
+		return array(
+			'is-ok'       => __( 'جاهز:', 'retrovault-core' ),
+			'is-missing'  => __( 'ناقص:', 'retrovault-core' ),
+			'is-optional' => __( 'اختياري:', 'retrovault-core' ),
+		);
+	}
+
+	/**
+	 * قائمة ما ينقص اللعبة قبل النشر؛ admin.js يحدّثها أثناء التعديل.
+	 *
+	 * @param \WP_Post $post اللعبة.
+	 */
+	public static function render_ready( $post ) {
+		$game  = Games::get( $post );
+		$file  = $game ? $game['rom']['file'] : '';
+		$sys   = ( $game && $game['system'] ) ? $game['system']['name'] : '';
+		$cover = $game && $game['cover_id'];
+		$lede  = '' !== trim( (string) $post->post_excerpt );
+		$bad   = $game && self::ext_mismatch( $game );
+		$items = array(
+			'file'    => array( '' !== $file, __( 'ملف اللعبة', 'retrovault-core' ), '' !== $file ? $file : __( 'لم يُرفع بعد', 'retrovault-core' ), true ),
+			'system'  => array( '' !== $sys, __( 'النظام', 'retrovault-core' ), '' !== $sys ? $sys : __( 'لم يُختر', 'retrovault-core' ), true ),
+			'match'   => array( ! $bad, __( 'الملف يناسب النظام', 'retrovault-core' ), $bad ? __( 'امتداد الملف غير معتاد لهذا النظام', 'retrovault-core' ) : '', true ),
+			'cover'   => array( $cover, __( 'الغلاف', 'retrovault-core' ), $cover ? '' : __( 'مستحسن: يظهر في البطاقات', 'retrovault-core' ), false ),
+			'excerpt' => array( $lede, __( 'وصف مختصر', 'retrovault-core' ), $lede ? '' : __( 'مستحسن: يظهر تحت اسم اللعبة', 'retrovault-core' ), false ),
+		);
+		$states = self::ready_states();
+		echo '<ul class="rv-ready" data-rv-ready>';
+		foreach ( $items as $key => $item ) {
+			$state = $item[0] ? 'is-ok' : ( $item[3] ? 'is-missing' : 'is-optional' );
+			printf(
+				'<li class="rv-ready__item %1$s" data-rv-ready-item="%2$s"%6$s><span class="rv-ready__mark"><span class="screen-reader-text">%5$s</span></span><span class="rv-ready__label">%3$s</span> <span class="rv-ready__note">%4$s</span></li>',
+				esc_attr( $state ),
+				esc_attr( $key ),
+				esc_html( $item[1] ),
+				esc_html( $item[2] ),
+				esc_html( $states[ $state ] ),
+				// التطابق يُفحص فقط حين يوجد ملف ونظام معاً.
+				( 'match' === $key && ( '' === $file || '' === $sys ) ) ? ' hidden' : ''
+			);
+		}
+		echo '</ul>';
 	}
 
 	/**
@@ -382,6 +493,7 @@ final class Game_Meta {
 					<code id="rv-ext-hint"><?php echo $system ? esc_html( '.' . implode( ' .', $system['ext'] ) ) : esc_html__( 'اختر النظام أولاً', 'retrovault-core' ); ?></code>
 					<?php esc_html_e( '— ويُقبل ملف ‎.zip أيضاً. لألعاب PS1 استخدم ‎.chd أو ‎.pbp أو ملف zip يضم ‎.cue و‎.bin (أو ملف PS-EXE مضغوطاً في zip).', 'retrovault-core' ); ?>
 				</p>
+				<p class="rv-auto-note" id="rv-auto-system" role="status" hidden></p>
 				<p>
 					<label for="rv-rom-url"><?php esc_html_e( 'أو رابط مباشر للملف (للملفات الكبيرة المرفوعة عبر FTP). الرابط المباشر لا يُحمى من التنزيل:', 'retrovault-core' ); ?></label>
 					<input type="url" class="large-text code" id="rv-rom-url" name="rv[rom_url]" value="<?php echo esc_attr( $v['rom_url'] ); ?>" placeholder="https://">
@@ -581,9 +693,24 @@ final class Game_Meta {
 			array(
 				'systems' => $systems,
 				'i18n'    => array(
-					'defaultCore' => __( 'الافتراضية للنظام', 'retrovault-core' ),
-					'pickSystem'  => __( 'اختر النظام أولاً', 'retrovault-core' ),
-					'remove'      => __( 'إزالة اللقطة', 'retrovault-core' ),
+					'defaultCore'    => __( 'الافتراضية للنظام', 'retrovault-core' ),
+					'pickSystem'     => __( 'اختر النظام أولاً', 'retrovault-core' ),
+					'remove'         => __( 'إزالة اللقطة', 'retrovault-core' ),
+					'states'         => self::ready_states(),
+					'noFile'         => __( 'لم يُرفع بعد', 'retrovault-core' ),
+					'noSystem'       => __( 'لم يُختر', 'retrovault-core' ),
+					'mismatch'       => __( 'امتداد الملف غير معتاد لهذا النظام', 'retrovault-core' ),
+					'coverHint'      => __( 'مستحسن: يظهر في البطاقات', 'retrovault-core' ),
+					'excerptHint'    => __( 'مستحسن: يظهر تحت اسم اللعبة', 'retrovault-core' ),
+					/* translators: %s: system name */
+					'autoSystem'     => __( 'اختير نظام «%s» من امتداد الملف. غيّره من صندوق «الأنظمة» إن لم يكن صحيحاً.', 'retrovault-core' ),
+					/* translators: %s: extension */
+					'sharedExt'      => __( 'امتداد ‎.%s تستخدمه عدة أنظمة؛ اختر النظام من صندوق «الأنظمة».', 'retrovault-core' ),
+					'whyNoFile'      => __( 'لم يُرفع ملفها', 'retrovault-core' ),
+					'whyNoSystem'    => __( 'لم يُختر نظامها', 'retrovault-core' ),
+					'whyMismatch'    => __( 'امتداد ملفها غير معتاد للنظام المختار', 'retrovault-core' ),
+					/* translators: %s: reasons */
+					'confirmPublish' => __( 'لن تعمل هذه اللعبة للزوار بعد: %s. هل تنشرها رغم ذلك؟', 'retrovault-core' ),
 				),
 			)
 		);

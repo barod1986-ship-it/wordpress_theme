@@ -26,6 +26,21 @@
 .rv-gallery__list img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
 .rv-gallery__remove { position: absolute; top: 2px; inset-inline-end: 2px; width: 22px; height: 22px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .7); color: #fff; cursor: pointer; line-height: 1; }
 
+/* جاهزية اللعبة */
+.rv-ready { margin: 0; }
+.rv-ready__item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0 0 8px; }
+.rv-ready__item[hidden] { display: none; }
+.rv-ready__mark { flex: none; width: 16px; font-weight: 700; text-align: center; }
+.rv-ready__item.is-ok .rv-ready__mark::before { content: "\2713"; color: #00701a; }
+.rv-ready__item.is-missing .rv-ready__mark::before { content: "\2715"; color: #b32d2e; }
+.rv-ready__item.is-optional .rv-ready__mark::before { content: "\2013"; color: #646970; }
+.rv-ready__label { font-weight: 600; }
+.rv-ready__note { flex-basis: 100%; padding-inline-start: 22px; color: #50575e; font-size: 12px; overflow-wrap: anywhere; }
+.rv-ready__note:empty { display: none; }
+.rv-ready__item.is-missing .rv-ready__note { color: #b32d2e; }
+.rv-meta .rv-auto-note { margin: 6px 0 0; padding: 6px 10px; border-inline-start: 3px solid #2271b1; background: #f0f6fc; }
+.rv-meta .rv-auto-note[hidden] { display: none; }
+
 .rv-system-radios { max-height: 260px; overflow: auto; }
 .rv-system-radios label { display: block; margin: 4px 0; }
 

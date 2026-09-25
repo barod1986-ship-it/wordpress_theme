@@ -1774,6 +1774,14 @@ p {
 	text-align: center;
 }
 
+/* لمن يحرّر اللعبة: ما ينقصها ورابط إكماله */
+.rv-player__fix {
+	margin-top: 12px;
+	color: #9fb0ff;
+	font-family: var(--f-ui);
+	font-size: var(--fs-14);
+}
+
 .rv-player__nojs {
 	position: absolute;
 	inset: 0;
