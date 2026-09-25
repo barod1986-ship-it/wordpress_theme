@@ -365,6 +365,13 @@ final class Game_Meta {
 			}
 			$messages[] = array( 'error', $message );
 		}
+		// رابط مباشر على موقع آخر: هل يسمح المتصفح بتنزيله من هنا؟
+		if ( ! $game['rom']['id'] && '' !== $game['rom']['raw_url'] ) {
+			$problem = Roms::check_link( $game['rom']['raw_url'] );
+			if ( $problem ) {
+				$messages[] = $problem;
+			}
+		}
 
 		if ( $messages ) {
 			set_transient( 'rv_notices_' . get_current_user_id(), $messages, MINUTE_IN_SECONDS );

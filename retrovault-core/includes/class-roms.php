@@ -76,6 +76,8 @@ final class Roms {
 		add_action( 'updated_post_meta', array( __CLASS__, 'on_meta' ), 10, 4 );
 		// وحفظ اللعبة يعيد المحاولة إن فشل النقل سابقاً.
 		add_action( 'save_post_' . Post_Types::GAME, array( __CLASS__, 'on_save' ), 30 );
+		add_filter( 'site_status_tests', array( __CLASS__, 'site_health' ) );
+		add_action( 'rest_api_init', array( __CLASS__, 'rest' ) );
 	}
 
 	/** Protect every metadata write path, including the classic custom-fields AJAX endpoint. */
@@ -255,10 +257,18 @@ final class Roms {
 		if ( '' === $session ) {
 			return '';
 		}
+		return self::sign( $game_id, $window, $session . '|' . get_current_user_id() . '|' . wp_get_session_token() );
+	}
+
+	/**
+	 * @param int      $game_id  رقم اللعبة.
+	 * @param int|null $window   النافذة (الحالية افتراضياً).
+	 * @param string   $identity جلسة المتصفح|رقم العضو|رمز جلسة الدخول.
+	 */
+	private static function sign( $game_id, $window, $identity ) {
 		if ( null === $window ) {
 			$window = (int) floor( time() / self::WINDOW );
 		}
-		$identity = $session . '|' . get_current_user_id() . '|' . wp_get_session_token();
 		return substr( hash_hmac( 'sha256', 'rv-rom|' . (int) $game_id . '|' . (int) $window . '|' . $identity, wp_salt( 'auth' ) ), 0, 32 );
 	}
 
@@ -283,16 +293,17 @@ final class Roms {
 	 * رابط ملف اللعبة للمشغّل: رابط مؤقت للملف المحمي، أو الرابط العادي لغيره.
 	 * اسم الملف آخر الرابط لأن EmulatorJS يعرف نوعه من امتداده، ويحفظ نسخته في المتصفح باسمه مع ?v=.
 	 *
-	 * @param array $game بيانات اللعبة.
+	 * @param array       $game  بيانات اللعبة.
+	 * @param string|null $token رمز جاهز (فحص الموقع)، وإلا فرمز هذا المتصفح.
 	 */
-	public static function player_url( $game ) {
+	public static function player_url( $game, $token = null ) {
 		$rom = $game['rom'];
 		if ( empty( $rom['protected'] ) ) {
 			return $rom['url'];
 		}
 		global $wp_rewrite;
 		$post  = get_post( $game['id'] );
-		$token = self::token( $game['id'] );
+		$token = null === $token ? self::token( $game['id'] ) : $token;
 		$name  = rawurlencode( $rom['file'] );
 		if ( $wp_rewrite && $wp_rewrite->using_permalinks() && 'publish' === get_post_status( $post ) ) {
 			return trailingslashit( get_permalink( $post ) ) . 'rom/' . $token . '/' . $name . '?v=' . $rom['ver'];
@@ -312,21 +323,36 @@ final class Roms {
 	 * @param \WP_Post $post اللعبة.
 	 */
 	public static function serve( $post ) {
+		// رد خاص بهذا المتصفح: لا تحفظه إضافات التخزين المؤقت ولو سمحت بغيره.
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
 		$game = Games::get( $post );
 		$path = ( $game && ! empty( $game['rom']['protected'] ) ) ? get_attached_file( $game['rom']['id'] ) : '';
 		if ( ! $path || ! is_readable( $path ) || ( 'publish' !== get_post_status( $post ) && ! current_user_can( 'edit_post', $post->ID ) ) ) {
-			self::deny( 404 );
+			self::deny( 404, 'missing' );
 		}
 		$requested = get_query_var( 'rv_rom' );
-		$token = is_string( $requested ) ? (string) strtok( $requested, '/' ) : '';
-		if ( post_password_required( $post ) || ! self::valid_token( $post->ID, $token ) || ! self::from_player() ) {
-			self::deny( 403 );
+		$token     = is_string( $requested ) ? (string) strtok( $requested, '/' ) : '';
+		// السبب في ترويسة X-RetroVault-Rom: المشغّل يشرحه للاعب ولمدير الموقع بدل «تحقق من اتصالك».
+		if ( post_password_required( $post ) ) {
+			self::deny( 403, 'password' );
+		}
+		if ( ! self::from_player() ) {
+			self::deny( 403, 'origin' );
+		}
+		if ( '' === self::session() ) {
+			self::deny( 403, 'session' );
+		}
+		if ( ! self::valid_token( $post->ID, $token ) ) {
+			self::deny( 403, 'token' );
 		}
 		self::send(
 			$path,
 			array(
 				'Cache-Control: private, no-store',
 				'Cross-Origin-Resource-Policy: same-origin',
+				'X-RetroVault-Rom: ok',
 			)
 		);
 	}
@@ -343,7 +369,7 @@ final class Roms {
 		}
 		$path = empty( $game['rom']['protected'] ) ? '' : get_attached_file( $game['rom']['id'] );
 		if ( ! $path || ! is_readable( $path ) ) {
-			self::deny( 404 ); // Never redirect to the physical attachment URL after a failure.
+			self::deny( 404, 'missing' ); // Never redirect to the physical attachment URL after a failure.
 		}
 		$name  = $game['rom']['file'];
 		$ascii = trim( (string) preg_replace( '/[^A-Za-z0-9._-]+/', '-', $name ), '-' );
@@ -416,10 +442,226 @@ final class Roms {
 	}
 
 	/**
-	 * @param int $status 403 أو 404.
+	 * فحص الموقع: طلب ملف لعبة كما يطلبه المشغّل، من الموقع إلى نفسه. يكشف ما يمنع كل الألعاب عن كل
+	 * الزوار ولا يظهر في بيئة التطوير: قاعدة nginx للملفات الثابتة، أو جدار حماية، أو CDN يحذف ملف تعريف
+	 * الارتباط أو الترويسات، أو عنوان موقع لا يطابق العنوان الفعلي.
+	 *
+	 * @param array $tests الفحوص.
 	 */
-	private static function deny( $status ) {
+	public static function site_health( $tests ) {
+		$tests['async']['retrovault_roms'] = array(
+			'label'             => __( 'ملفات الألعاب تصل إلى المشغّل', 'retrovault-core' ),
+			'test'              => rest_url( Rest::NS . '/site-health/roms' ),
+			'has_rest'          => true,
+			'async_direct_test' => array( __CLASS__, 'site_health_roms' ),
+		);
+		return $tests;
+	}
+
+	public static function rest() {
+		register_rest_route(
+			Rest::NS,
+			'/site-health/roms',
+			array(
+				'methods'             => 'GET',
+				'callback'            => static function () {
+					return rest_ensure_response( self::site_health_roms() );
+				},
+				'permission_callback' => static function () {
+					return current_user_can( 'view_site_health_checks' );
+				},
+			)
+		);
+	}
+
+	/** أول لعبة منشورة (بلا كلمة مرور) ملفها في المجلد المحمي. */
+	private static function health_game() {
+		$ids = get_posts(
+			array(
+				'post_type'      => Post_Types::GAME,
+				'post_status'    => 'publish',
+				'has_password'   => false,
+				'posts_per_page' => 20,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'     => Game_Meta::PREFIX . 'rom_id',
+						'value'   => 0,
+						'compare' => '>',
+						'type'    => 'NUMERIC',
+					),
+				),
+			)
+		);
+		foreach ( $ids as $id ) {
+			$game = Games::get( $id );
+			if ( $game && $game['playable'] && ! empty( $game['rom']['protected'] ) ) {
+				return $game;
+			}
+		}
+		return null;
+	}
+
+	/** @return array نتيجة الفحص. */
+	public static function site_health_roms() {
+		$result = array(
+			'label'       => __( 'ملفات الألعاب تصل إلى المشغّل', 'retrovault-core' ),
+			'status'      => 'good',
+			'badge'       => array(
+				'label' => __( 'الألعاب', 'retrovault-core' ),
+				'color' => 'blue',
+			),
+			'description' => '<p>' . esc_html__( 'طلبنا ملف لعبة كما يطلبه المشغّل، فوصل الطلب إلى الإضافة وعاد بالملف.', 'retrovault-core' ) . '</p>',
+			'actions'     => '',
+			'test'        => 'retrovault_roms',
+		);
+		$game = self::health_game();
+		if ( ! $game ) {
+			$result['description'] = '<p>' . esc_html__( 'لا توجد بعد لعبة منشورة بملف مرفوع إلى الموقع لفحصها.', 'retrovault-core' ) . '</p>';
+			return $result;
+		}
+
+		$session  = wp_generate_password( 64, false, false );
+		$url      = self::player_url( $game, self::sign( $game['id'], null, $session . '|0|' ) );
+		$response = wp_remote_head(
+			$url,
+			array(
+				'timeout'     => 10,
+				'redirection' => 0,
+				/** This filter is documented in wp-includes/class-wp-site-health.php */
+				'sslverify'   => apply_filters( 'https_local_ssl_verify', false ),
+				'cookies'     => array( self::cookie_name() => $session ),
+				'headers'     => array(
+					'Sec-Fetch-Site' => 'same-origin',
+					'Sec-Fetch-Mode' => 'cors',
+					'Sec-Fetch-Dest' => 'empty',
+					'Referer'        => $game['player_url'],
+					'Cache-Control'  => 'no-cache',
+				),
+			)
+		);
+		/* translators: %s: game title */
+		$which = '<p>' . esc_html( sprintf( __( 'اللعبة المفحوصة: %s', 'retrovault-core' ), $game['title'] ) ) . '</p><p><code dir="ltr">' . esc_html( remove_query_arg( 'v', $url ) ) . '</code></p>';
+
+		if ( is_wp_error( $response ) ) {
+			$result['status']      = 'recommended';
+			$result['label']       = __( 'تعذّر فحص وصول ملفات الألعاب', 'retrovault-core' );
+			/* translators: %s: error message */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'الموقع لم يستطع الاتصال بنفسه لطلب ملف لعبة: %s', 'retrovault-core' ), $response->get_error_message() ) ) . '</p>' . $which;
+			return $result;
+		}
+
+		$code   = (int) wp_remote_retrieve_response_code( $response );
+		$reason = strtolower( (string) wp_remote_retrieve_header( $response, 'x-retrovault-rom' ) );
+		if ( 200 === $code && 'ok' === $reason ) {
+			return $result;
+		}
+
+		$result['status'] = 'critical';
+		$result['label']  = __( 'ملفات الألعاب لا تصل إلى المشغّل', 'retrovault-core' );
+		if ( $code >= 300 && $code < 400 ) {
+			$result['label']       = __( 'روابط ملفات الألعاب تُحوَّل إلى عنوان آخر', 'retrovault-core' );
+			/* translators: %s: redirect target */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'الخادم يحوّل طلب ملف اللعبة إلى %s، والمتصفح يرفض ذلك إن تغيّر النطاق أو البروتوكول. عنوان الموقع في الإعدادات ← عام لا يطابق العنوان الفعلي (https أو www).', 'retrovault-core' ), (string) wp_remote_retrieve_header( $response, 'location' ) ) ) . '</p>';
+			$result['actions']     = '<p><a href="' . esc_url( admin_url( 'options-general.php' ) ) . '">' . esc_html__( 'الإعدادات ← عام', 'retrovault-core' ) . '</a></p>';
+		} elseif ( 'session' === $reason ) {
+			/* translators: %s: cookie name */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'طلب الملف وصل إلى ووردبريس بلا ملف تعريف الارتباط %s، فالخادم أو CDN (Varnish مثلاً) يحذفه. الألعاب لن تعمل لأي زائر حتى يُسمح به.', 'retrovault-core' ), self::cookie_name() ) ) . '</p>';
+		} elseif ( 'origin' === $reason ) {
+			$result['description'] = '<p>' . esc_html__( 'طلب الملف وصل إلى ووردبريس بلا ترويسات Sec-Fetch ولا Referer، فالخادم أو CDN يحذفها. الألعاب لن تعمل لأي زائر حتى يُسمح بها.', 'retrovault-core' ) . '</p>';
+		} elseif ( '' !== $reason ) {
+			/* translators: 1: HTTP status code, 2: reason */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'الإضافة رفضت الطلب (%1$d، %2$s).', 'retrovault-core' ), $code, $reason ) ) . '</p>';
+		} elseif ( $code >= 500 ) {
+			/* translators: %d: HTTP status code */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'الخادم ردّ بالخطأ %d. راجع سجل أخطاء PHP في الاستضافة.', 'retrovault-core' ), $code ) ) . '</p>';
+		} else {
+			/* translators: %d: HTTP status code */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'الخادم ردّ بالخطأ %d قبل أن يصل الطلب إلى ووردبريس، فلن تعمل الألعاب المرفوعة لأي زائر. السبب غالباً قاعدة nginx للملفات الثابتة (الروابط المنتهية بـ ‎.zip أو ‎.nes مثلاً) لا تُحيل إلى index.php، أو جدار حماية.', 'retrovault-core' ), $code ) ) . '</p>';
+			$result['actions']     = '<p>' . esc_html__( 'في إعدادات nginx، اجعل قاعدة الملفات الثابتة تُحيل الطلب إلى ووردبريس إن لم يكن الملف موجوداً:', 'retrovault-core' ) . '</p><p><code dir="ltr">try_files $uri $uri/ /index.php?$args;</code></p>';
+		}
+		$result['description'] .= $which;
+		return $result;
+	}
+
+	/**
+	 * يفحص «رابطاً مباشراً» لملف لعبة على موقع آخر: المتصفح لا ينزّله إلا إن سمح ذلك الموقع بذلك
+	 * (Access-Control-Allow-Origin)، ورابط http لا يعمل في موقع https، ورابط المشاركة صفحة لا ملف.
+	 *
+	 * @param string $url الرابط.
+	 * @return array|null array( نوع التنبيه, الرسالة ) أو null إن بدا سليماً أو تعذّر فحصه.
+	 */
+	public static function check_link( $url ) {
+		$home = wp_parse_url( home_url( '/' ) );
+		$link = wp_parse_url( (string) $url );
+		if ( ! is_array( $link ) || empty( $link['host'] ) || empty( $link['scheme'] ) ) {
+			return null;
+		}
+		if ( 'https' === strtolower( $home['scheme'] ) && 'http' === strtolower( $link['scheme'] ) ) {
+			return array( 'error', __( 'الرابط المباشر لملف اللعبة يبدأ بـ http:// والموقع يعمل بـ https://، فيمنعه المتصفح ولن تعمل اللعبة. استخدم رابط https أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ) );
+		}
+		$port   = static function ( $u ) {
+			return isset( $u['port'] ) ? (int) $u['port'] : ( 'https' === strtolower( $u['scheme'] ) ? 443 : 80 );
+		};
+		$origin = strtolower( $home['scheme'] . '://' . $home['host'] ) . ( isset( $home['port'] ) ? ':' . $home['port'] : '' );
+		if ( strtolower( $link['host'] ) === strtolower( $home['host'] ) && strtolower( $link['scheme'] ) === strtolower( $home['scheme'] ) && $port( $link ) === $port( $home ) ) {
+			return null; // نفس الموقع: لا يحتاج إذناً.
+		}
+		$key = 'rv_link_' . md5( $url . '|' . $origin );
+		if ( get_transient( $key ) ) {
+			return null;
+		}
+		$args     = array(
+			'timeout'     => 6,
+			'redirection' => 5,
+			'headers'     => array( 'Origin' => $origin ),
+		);
+		$response = wp_safe_remote_head( $url, $args );
+		if ( ! is_wp_error( $response ) && in_array( (int) wp_remote_retrieve_response_code( $response ), array( 403, 405, 501 ), true ) ) {
+			// خوادم لا تقبل HEAD: أول بايت فقط.
+			$args['headers']['Range']    = 'bytes=0-0';
+			$args['limit_response_size'] = 1024;
+			$response                    = wp_safe_remote_get( $url, $args );
+		}
+		if ( is_wp_error( $response ) ) {
+			return null; // لم نتمكن من الفحص (جدار حماية الخادم مثلاً): لا نحكم على الرابط.
+		}
+		$code  = (int) wp_remote_retrieve_response_code( $response );
+		$type  = strtolower( (string) wp_remote_retrieve_header( $response, 'content-type' ) );
+		$allow = trim( (string) wp_remote_retrieve_header( $response, 'access-control-allow-origin' ) );
+		if ( $code >= 400 ) {
+			/* translators: %d: HTTP status code */
+			return array( 'error', sprintf( __( 'الرابط المباشر لملف اللعبة يعيد الخطأ %d، فلن تعمل اللعبة. تحقق منه أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ), $code ) );
+		}
+		if ( 0 === strpos( $type, 'text/html' ) ) {
+			return array( 'error', __( 'الرابط المباشر يفتح صفحة ويب وليس ملف اللعبة نفسه (رابط مشاركة من Google Drive أو غيره مثلاً). استخدم رابط التنزيل المباشر أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ) );
+		}
+		if ( '*' !== $allow && strtolower( rtrim( $allow, '/' ) ) !== $origin ) {
+			/* translators: %s: host name */
+			return array( 'error', sprintf( __( 'الموقع الذي عليه ملف اللعبة (%s) لا يسمح بتنزيله من موقعك (ترويسة Access-Control-Allow-Origin)، فلن تعمل اللعبة. ارفع الملف إلى مكتبة الوسائط بدلاً من الرابط.', 'retrovault-core' ), $link['host'] ) );
+		}
+		set_transient( $key, 1, 12 * HOUR_IN_SECONDS );
+		return null;
+	}
+
+	/** رابط ملف للعبة غير موجودة أو غير منشورة. */
+	public static function not_found() {
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		self::deny( 404, 'missing' );
+	}
+
+	/**
+	 * @param int    $status 403 أو 404.
+	 * @param string $reason missing | password | origin | session | token.
+	 */
+	private static function deny( $status, $reason ) {
 		nocache_headers();
+		header( 'X-RetroVault-Rom: ' . $reason );
 		wp_die(
 			esc_html( 403 === $status ? __( 'ملفات الألعاب تعمل داخل المشغّل فقط، ولا يمكن فتحها أو تنزيلها مباشرة.', 'retrovault-core' ) : __( 'الملف غير موجود.', 'retrovault-core' ) ),
 			esc_html( 403 === $status ? __( 'غير مسموح', 'retrovault-core' ) : __( 'غير موجود', 'retrovault-core' ) ),
