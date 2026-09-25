@@ -8,6 +8,13 @@ php -v | head -n 1 >&2
 find retrovault retrovault-core -name '*.php' -print0 | xargs -0 -n 1 php -l > /dev/null
 find retrovault retrovault-core -name '*.js' -print0 | xargs -0 -n 1 node --check
 node --test .github/scripts/cloud-saves.test.cjs .github/scripts/rom-cache.test.cjs
+# كل خط في fonts.css موجود في القالب.
+for font in $(grep -oP 'url\("\K[^"?]+' retrovault/assets/fonts/fonts.css); do
+	if [ ! -s "retrovault/assets/fonts/$font" ]; then
+		echo "::error::fonts.css points to a missing font: $font"
+		exit 1
+	fi
+done
 
 header=$(grep -m 1 -oP '^\s*\*\s*Version:\s*\K\S+' retrovault-core/retrovault-core.php || true)
 constant=$(grep -m 1 -oP "RETROVAULT_VERSION',\s*'\K[^']+" retrovault-core/retrovault-core.php || true)

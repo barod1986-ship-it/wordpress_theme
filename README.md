@@ -143,6 +143,54 @@
 - **تصدير CSV:** خلية تبدأ بـ `=` أو `+` أو `-` أو `@` تُسبق بـ `'` كي لا ينفّذها Excel معادلة.
 - **EmulatorJS** يُحمَّل افتراضياً من cdn.emulatorjs.org ويعمل في صفحة المشغّل على نطاق موقعك. لأعلى حماية ارفع مجلد data إلى موقعك وضع رابطه في «مسار ملفات EmulatorJS»، فلا يعتمد موقعك على خادم خارجي.
 
+## السرعة على الجوال (1.14)
+
+قيست الصفحات الأربع الأكثر زيارة بـ Lighthouse كجوال متوسط على 4G بطيء، بتبطئة فعلية للشبكة والمعالج:
+
+| الصفحة | النتيجة | ظهور أكبر عنصر | إزاحة العناصر أثناء التحميل |
+|---|---|---|---|
+| الرئيسية | 82 ← 98 | 2.0 ← 1.8 ث | 0.30 ← 0.06 |
+| المكتبة | 95 ← 99 | 2.6 ← 1.8 ث | 0 |
+| صفحة اللعبة | 92 ← 98 | 2.6 ← 1.8 ث | 0.01 |
+| التدوينة | 87 ← 97 | 3.7 ← 2.1 ث | 0.03 |
+
+- **خط الشاشات (Handjet):**
+  - كل حرف فيه مبني من «بكسلات». في ملف Google Fonts كان كل بكسل أربعة مربعات متطابقة بـ 192 نقطة، وصار مربعاً واحداً بأربع نقاط بالشكل نفسه.
+  - ترتيب الصفحة الرئيسية على جوال متوسط صار أسرع بنحو الثلثين (280 ← 110 ملّي ثانية)، والمكتبة وصفحة اللعبة بنحو النصف.
+  - صار Chrome يرسم الوزنين 600 و800 المكتوبين في التصميم (كان يرسم كل الأوزان كـ400). عناوين الشاشات وأزرارها صارت أعرض خطاً كما صُممت.
+- **الخطوط أخف 15%** (208 ← 176 كيلوبايت تُطلب في كل صفحة):
+  - حُذفت منها أسماء الحروف الداخلية، وهي لا تُستعمل في المتصفح.
+  - اقتصرت ملفات العربية على الحروف العربية الأساسية وأشكالها. حروف الامتدادات النادرة (لغات أفريقية وعلامات قرآنية) تظهر بخط الجهاز.
+  - IBM Plex يُرسم كما كان تماماً (قورن بكسلاً ببكسل). السكربت `tools/fonts/optimize.py` يعيد بناء الملفات من نسخ Google Fonts.
+- **قفزة الرئيسية أثناء التحميل:** عرض فقرة الترحيب كان بوحدة `ch`، أي عرض الرقم 0 في الخط، فيتغير لحظة وصول خط الموقع. كانت الفقرة يُعاد لفّها فيُدفع التلفاز تحتها. صار العرض بوحدة `em` بالقيمة نفسها، وكذلك باقي النصوص التي كانت بـ `ch`.
+- **أكبر صورة تُطلب أولاً:** صورة المشغّل في صفحة اللعبة، والصورة البارزة في التدوينة، وغلاف أول لعبة في المكتبة.
+  - تُطلب قبل الخطوط بـ `preload` بالرابط وsrcset وsizes نفسها التي في الصورة، فلا تُنزَّل مرتين.
+  - على خوادم HTTP/1.1 كانت تنتظر دورها خلف ثمانية خطوط.
+  - الدالة الجديدة `rv_get_poster_url()` تعطي أي قالب صورة المشغّل ليطلبها مبكراً.
+
+### حفظ الملفات الثابتة في المتصفح
+
+كل رابط لخطوط القالب وملفات CSS وJavaScript يتغير مع أي تعديل عليها (`?v=` و`?ver=`)، فلا بأس أن يحفظها المتصفح مدة طويلة. كثير من الاستضافات تفعل ذلك تلقائياً. إن ذكر تقرير PageSpeed «Serve static assets with an efficient cache policy» فأضف ما يلي.
+
+على Apache أو LiteSpeed، في ملف `.htaccess` بجذر الموقع خارج علامتي `# BEGIN WordPress` و`# END WordPress`:
+
+```apache
+<IfModule mod_expires.c>
+	ExpiresActive On
+	ExpiresByType font/woff2 "access plus 1 year"
+	ExpiresByType text/css "access plus 1 month"
+	ExpiresByType text/javascript "access plus 1 month"
+	ExpiresByType application/javascript "access plus 1 month"
+</IfModule>
+```
+
+وعلى nginx، داخل `server`:
+
+```nginx
+location ~* \.woff2$ { expires 1y; }
+location ~* \.(css|js)$ { expires 30d; }
+```
+
 ---
 
 ## ميزات الأعضاء (1.1)
@@ -315,7 +363,7 @@ add_filter( 'retrovault_player_config', function ( $config, $game ) {
 | `retrovault_signups_per_hour` | حسابات التسجيل الفوري لكل اتصال في الساعة (الافتراضي 5) |
 | `retrovault_client_ip` | عنوان الزائر للعدّادات والحدود (مثلاً العنوان الحقيقي خلف CDN) |
 
-دوال القالب: `rv_get_notices()`، `rv_unseen_notices_count()`، `rv_pwa_enabled()`، `rv_offline_key()`، `rv_get_game()`، `rv_player()`، `rv_query_games()`، `rv_related_games()`، `rv_get_systems()`، `rv_get_controls()`، `rv_current_filters()`، `rv_totals()`، `rv_is_favorite()`، `rv_get_favorites()`، `rv_get_save()`، `rv_get_saves()`، `rv_get_user_ratings()`، `rv_account_url()`، `rv_account_settings_form()`، `rv_register_url()`، `rv_changelog_html()`، `rv_saves_usage()`، `rv_game_devlog()`، `rv_devlog_latest()`، `rv_post_games()`، `rv_devlog_url()`، `rv_members_only_comments()`.
+دوال القالب: `rv_get_notices()`، `rv_unseen_notices_count()`، `rv_pwa_enabled()`، `rv_offline_key()`، `rv_get_game()`، `rv_player()`، `rv_get_poster_url()`، `rv_query_games()`، `rv_related_games()`، `rv_get_systems()`، `rv_get_controls()`، `rv_current_filters()`، `rv_totals()`، `rv_is_favorite()`، `rv_get_favorites()`، `rv_get_save()`، `rv_get_saves()`، `rv_get_user_ratings()`، `rv_account_url()`، `rv_account_settings_form()`، `rv_register_url()`، `rv_changelog_html()`، `rv_saves_usage()`، `rv_game_devlog()`، `rv_devlog_latest()`، `rv_post_games()`، `rv_devlog_url()`، `rv_members_only_comments()`.
 
 واجهة REST (`/wp-json/retrovault/v1/`):
 
@@ -351,6 +399,8 @@ add_filter( 'retrovault_player_config', function ( $config, $game ) {
 ## ما الذي اختُبر
 
 على ووردبريس 7.1.2 و PHP 8.3: كل الصفحات بلا أي تحذير PHP، رفع كل صيغ الملفات، الفلترة والترتيب والبحث، التقييم كعضو (وحظره على الزائر)، التعليقات للأعضاء فقط، منع الأعضاء من لوحة التحكم، عدّاد اللعب ومنع تكراره، التنزيل المسموح والممنوع، وتشغيل ملف NES حقيقي داخل المشغّل عبر EmulatorJS 4.2.3 من البداية للنهاية.
+
+وفي 1.14.0: Lighthouse على الصفحات الأربع كجوال متوسط على 4G بطيء (تبطئة فعلية)، وقياس القفزات أثناء التحميل بعروض 360 و390 و412 بكسل، مع خطوط جوال Android البديلة (Noto Naskh Arabic وNoto Sans Arabic وRoboto) إلى جانب خطوط Linux. خط IBM Plex المخفف يُرسم مطابقاً للأصل بكسلاً ببكسل بأوزانه الثلاثة، وHandjet مطابق بوزن 400، وحدود كل حروفه وعروضها مطابقة بثمانية أوزان. كل خط يُطلب مبكراً يُنزَّل مرة واحدة ويُستعمل، وكل صورة تُطلب مبكراً هي نفسها التي تعرضها الصفحة. وجُرّب `font-display: optional` بدل `swap` ورُفض: أخّر أول ظهور للصفحة، وأظهر خط الجهاز حتى على اتصالات يصل فيها خط الموقع قبل أول رسم.
 
 وفي 1.13.0: مراجعة أمان لكل نقاط دخول البيانات (واجهة REST، النماذج، الرفع، الحفظ، الروابط، الرسائل بين النوافذ، وإخراج القوالب)، ثم: قفل الدخول بعد 5 محاولات عبر wp-login.php نفسه (الصحيحة تُرفض أثناءه، والحساب يعمل من اتصال آخر)، وحد التسجيل الفوري، ومحاولات كلمة المرور الحالية، ومساحة الحفظ عبر واجهة REST الحقيقية (رُفض الحفظ السادس برسالته، وقُبل حفظ يستبدل الأقدم)، وحفظ اللعبة الداخلي، وعدّ IPv6 بشبكته، وخلايا CSV، وترويسات منع التأطير في «حسابي» وصفحة الإيقاف دون صفحات الألعاب.
 

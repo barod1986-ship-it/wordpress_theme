@@ -44,6 +44,8 @@
 
 	--f-ui: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
 	--f-screen: "Handjet", "IBM Plex Sans Arabic", system-ui, sans-serif;
+	/* عروض النصوص بـ em لا ch: وحدة ch تُحسب من عرض الرقم 0 في الخط المتاح لحظتها، فتتغير عند وصول خط الموقع
+	   فيُعاد لفّ النص وتُدفع العناصر تحته. في IBM Plex Sans Arabic عرض 0 يساوي 0.6em، فـ 36ch = 21.6em. */
 
 	--fs-14: .875rem;
 	--fs-16: 1rem;
@@ -642,7 +644,7 @@ p {
 }
 
 .hero__text {
-	max-width: 36ch;
+	max-width: 21.6em;
 	margin: 0;
 	color: var(--ink-soft);
 	font-size: var(--fs-18);
@@ -1510,7 +1512,7 @@ p {
 
 .game-lede {
 	grid-area: lede;
-	max-width: 65ch;
+	max-width: 39em;
 	margin: 0;
 	color: var(--ink-soft);
 }
@@ -2052,7 +2054,7 @@ html.rv-immersive body {
 
 .rate__bar {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) 2.5ch;
+	grid-template-columns: auto minmax(0, 1fr) 1.5em;
 	align-items: center;
 	gap: 8px;
 	line-height: 1.6;
@@ -2464,7 +2466,7 @@ img.is-pixel {
 }
 
 .entry > * {
-	max-width: 70ch;
+	max-width: 42em;
 }
 
 .entry > *:last-child {
@@ -3555,7 +3557,7 @@ img.is-pixel {
 }
 
 .join p {
-	max-width: 52ch;
+	max-width: 31.2em;
 	margin: 0;
 	color: var(--ink-soft);
 }
@@ -3818,7 +3820,7 @@ img.is-pixel {
 }
 
 .site-footer__about p {
-	max-width: 42ch;
+	max-width: 25.2em;
 	margin-top: 12px;
 }
 

@@ -39,6 +39,11 @@ fail() {
 	FAILED=1
 }
 
+# check <الوصف> <المتوقع> <الفعلي>
+check() {
+	if [ "$3" = "$2" ]; then echo "ok $2 $1"; else fail "$1 returned $3 (expected $2)"; fi
+}
+
 echo "== WordPress + PHP ${PHP_VERSION}"
 docker network create "$NET" > /dev/null
 docker run -d --name "$DB" --network "$NET" -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=wp \
@@ -137,12 +142,36 @@ expect 302 '/?rv_random=1'
 expect 200 /feed/
 expect 200 "/wp-json/retrovault/v1/games/$GAME/rating"
 
+echo "== Fonts and preloads"
+# كل خط يُطلب مبكراً (preload) هو الرابط نفسه في fonts.css، وإلا نزّله المتصفح مرتين. والملفات موجودة.
+curl -s -o "$TMP/home.html" "$BASE/"
+fonts_css=$(grep -m 1 -oP "id='rvt-fonts-css' href='\K[^']+" "$TMP/home.html" || true)
+curl -s -o "$TMP/fonts.css" "$fonts_css"
+grep -oP '<link rel="preload" href="\K[^"]+(?=" as="font")' "$TMP/home.html" > "$TMP/preloads" || true
+check "font preloads on the home page" 8 "$(wc -l < "$TMP/preloads")"
+while read -r url; do
+	if ! grep -qF "url(\"${url##*/}\")" "$TMP/fonts.css"; then
+		fail "preloaded font ${url##*/} is not the URL fonts.css uses"
+	fi
+	got=$(curl -s -o "$TMP/font" -w '%{http_code}' "$url")
+	if [ "$got" != 200 ] || [ "$(wc -c < "$TMP/font")" -lt 1000 ]; then
+		fail "font $url returned $got"
+	fi
+done < "$TMP/preloads"
+# أكبر صورة في أعلى صفحة اللعبة (صورة المشغّل) والتدوينة (الصورة البارزة) تُطلب قبل الخطوط وبالرابط نفسه.
+curl -s -o "$TMP/game.html" "$BASE/games/pixel-quest/"
+check "the game page preloads its player image" \
+	"$(grep -m 1 -oP 'class="rv-player__poster[^"]*" src="\K[^"]+' "$TMP/game.html" || echo none)" \
+	"$(grep -m 1 -oP '<link rel="preload" href="\K[^"]+(?=" as="image")' "$TMP/game.html" || echo missing)"
+wp eval 'set_post_thumbnail( get_page_by_path( "devlog-first-update", OBJECT, "post" ), get_post_thumbnail_id( get_page_by_path( "pixel-quest", OBJECT, "rv_game" ) ) );'
+curl -s -o "$TMP/post.html" "$BASE/devlog-first-update/"
+check "the post preloads its featured image with the same srcset" \
+	"$(grep -m 1 -oP '<img [^>]*wp-post-image[^>]* srcset="\K[^"]+' "$TMP/post.html" || echo none)" \
+	"$(grep -m 1 -oP '<link rel="preload" [^>]*as="image" imagesrcset="\K[^"]+' "$TMP/post.html" || echo missing)"
+
 echo "== Game file protection"
 # status <وسائط curl...>: رمز الرد فقط. check <الوصف> <المتوقع> <الفعلي>.
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-check() {
-	if [ "$3" = "$2" ]; then echo "ok $2 $1"; else fail "$1 returned $3 (expected $2)"; fi
-}
 xhr=(-H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Dest: empty')
 curl -s -D "$TMP/player.headers" -c "$TMP/player.jar" "$BASE/games/pixel-quest/play/" > "$TMP/player.html"
 rom=$(grep -oE 'EJS_gameUrl = "[^"]+"' "$TMP/player.html" | sed -e 's/^EJS_gameUrl = "//' -e 's/"$//' -e 's#\\/#/#g' || true)

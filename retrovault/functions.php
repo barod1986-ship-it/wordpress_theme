@@ -128,12 +128,14 @@ function rvt_asset_version( $path ) {
 /*
  * خطوط أعلى كل صفحة تُطلب مع رأس الصفحة بدل انتظار ملفات CSS، فتصل قبل أول رسم غالباً. بدونها تظهر
  * الصفحة لحظةً بخط الجهاز (أعرض) ثم تنكمش عند وصول الخط فتتحرك القائمة والأزرار ويُعاد لفّ النص.
- * كل أوزان النص الثلاثة بالعربية واللاتينية (اللاتينية فيها الأرقام والرموز، ومنها يُحسب عرض ch في
- * max-width)، وHandjet لنصوص الشاشات. بعد أوراق الأنماط (الأولوية 9) لتُطلب CSS أولاً.
+ * كل أوزان النص الثلاثة بالعربية واللاتينية (اللاتينية فيها الأرقام والرموز)، وHandjet لنصوص الشاشات.
+ * بعد أوراق الأنماط (الأولوية 9) لتُطلب CSS أولاً. الرابط يطابق ما في fonts.css حرفياً (مع ?v=)،
+ * وإلا نزّل المتصفح الخط مرتين.
  */
 add_action(
 	'wp_head',
 	static function () {
+		rvt_preload_hero_image();
 		$fonts = array( 'handjet-arabic', 'handjet-latin' );
 		foreach ( array( 'arabic', 'latin' ) as $subset ) {
 			foreach ( array( 400, 500, 700 ) as $weight ) {
@@ -141,11 +143,61 @@ add_action(
 			}
 		}
 		foreach ( $fonts as $font ) {
-			printf( '<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n", esc_url( get_theme_file_uri( 'assets/fonts/' . $font . '.woff2' ) ) );
+			printf( '<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n", esc_url( get_theme_file_uri( 'assets/fonts/' . $font . '.woff2' ) . '?v=2' ) );
 		}
 	},
 	9
 );
+
+/**
+ * أكبر صورة في أعلى الصفحة تُطلب قبل الخطوط: صورة المشغّل في صفحة اللعبة، والصورة البارزة في التدوينة،
+ * وغلاف أول لعبة في المكتبة. بدون ذلك تكتشفها المتصفحات بعد الخطوط الثمانية، وعلى اتصالات HTTP/1.1
+ * (ستة طلبات معاً) تنتظر دورها فيتأخر ظهور أكبر عنصر في الصفحة.
+ */
+function rvt_preload_hero_image() {
+	global $wp_query;
+	if ( is_singular( 'rv_game' ) && function_exists( 'rv_get_poster_url' ) ) {
+		$url = rv_get_poster_url();
+		if ( $url ) {
+			printf( '<link rel="preload" href="%s" as="image" fetchpriority="high">' . "\n", esc_url( $url ) );
+		}
+	} elseif ( is_singular( 'post' ) && has_post_thumbnail() ) {
+		rvt_preload_image( get_post_thumbnail_id(), 'large' );
+	} elseif ( rvt_has_core() && ( is_post_type_archive( 'rv_game' ) || is_tax( array( 'rv_system', 'rv_genre' ) ) ) && ! empty( $wp_query->posts ) ) {
+		$game = rv_get_game( $wp_query->posts[0] );
+		if ( $game && $game['cover_id'] ) {
+			rvt_preload_image( $game['cover_id'], 'rvt-cover', rvt_card_sizes() );
+		}
+	}
+}
+
+/**
+ * preload لصورة مرفق بنفس src وsrcset وsizes التي يطبعها ووردبريس في الصورة نفسها، فلا تُنزَّل مرتين.
+ *
+ * @param int    $id    المرفق.
+ * @param string $size  المقاس.
+ * @param string $sizes sizes كما في الصورة (الافتراضي: ما يحسبه ووردبريس).
+ */
+function rvt_preload_image( $id, $size, $sizes = '' ) {
+	$url = wp_get_attachment_image_url( $id, $size );
+	if ( ! $url ) {
+		return;
+	}
+	$srcset = wp_get_attachment_image_srcset( $id, $size );
+	if ( $srcset && '' === $sizes ) {
+		$sizes = wp_get_attachment_image_sizes( $id, $size );
+	}
+	printf(
+		'<link rel="preload" href="%1$s" as="image"%2$s fetchpriority="high">' . "\n",
+		esc_url( $url ),
+		$srcset ? sprintf( ' imagesrcset="%1$s" imagesizes="%2$s"', esc_attr( $srcset ), esc_attr( $sizes ) ) : ''
+	);
+}
+
+/** sizes لغلاف بطاقة اللعبة: عمودان على الجوال، و170px على الشاشات الأعرض. */
+function rvt_card_sizes() {
+	return '(max-width: 600px) 40vw, 170px';
+}
 
 /*
  * كلاس js على <html> قبل أول رسم: ما يطويه السكربت (فلاتر المكتبة على الجوال) يظهر مطوياً من البداية
