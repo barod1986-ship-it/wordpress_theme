@@ -1893,6 +1893,55 @@ body.rv-theater .game-keys__pad {
 	}
 }
 
+/* اللعب على الجوال: الشاشة تملأ الجهاز كله والصفحة خلفها لا تتحرك (player.js) */
+html.rv-immersive,
+html.rv-immersive body {
+	overflow: hidden;
+	overscroll-behavior: none;
+}
+
+.rv-player.is-immersive .rv-player__screen {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	width: 100%;
+	height: 100vh;
+	height: 100dvh;
+	aspect-ratio: auto;
+	margin: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+/* زر العودة للصفحة: في الزاوية المقابلة لزر قائمة المحاكي */
+.rv-player__exit {
+	position: fixed;
+	top: max(10px, env(safe-area-inset-top));
+	left: max(10px, env(safe-area-inset-left));
+	z-index: 100001;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(12, 12, 16, .6);
+	color: #fff;
+	font-size: 1rem;
+	cursor: pointer;
+	box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .3);
+}
+
+.rv-player__exit:focus-visible {
+	outline: 3px solid #fff;
+	outline-offset: 2px;
+}
+
+.rv-player__exit[hidden] {
+	display: none;
+}
+
 .panel {
 	padding: 18px 18px 16px;
 	border-radius: var(--r-panel);

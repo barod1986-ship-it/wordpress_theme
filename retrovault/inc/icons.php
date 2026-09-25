@@ -122,6 +122,7 @@ add_filter(
 			'reload'     => 'reload',
 			'external'   => 'window',
 			'cloud'      => 'cloud',
+			'close'      => 'close',
 		);
 		return isset( $map[ $name ] ) ? rvt_icon( $map[ $name ] ) : $html;
 	},
