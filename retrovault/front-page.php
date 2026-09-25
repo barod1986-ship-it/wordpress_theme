@@ -172,10 +172,18 @@ endif;
 			<div class="join">
 				<div>
 					<h2 class="join__title"><?php esc_html_e( 'قيّم الألعاب وشارك رأيك', 'retrovault' ); ?></h2>
-					<p><?php esc_html_e( 'الحساب مجاني، ويتيح لك تقييم الألعاب بالنجوم والتعليق عليها والإبلاغ عن أي مشكلة تواجهك.', 'retrovault' ); ?></p>
+					<p>
+						<?php
+						echo esc_html(
+							rvt_has_core() && rv_cloud_saves_enabled()
+								? __( 'الحساب مجاني ويُنشأ في دقيقة: قيّم الألعاب وعلّق عليها، واحفظ تقدّمك لتكمل من أي جهاز، وتابع جديد ألعابك المفضلة.', 'retrovault' )
+								: __( 'الحساب مجاني ويُنشأ في دقيقة: قيّم الألعاب بالنجوم وعلّق عليها، وتابع جديد ألعابك المفضلة.', 'retrovault' )
+						);
+						?>
+					</p>
 				</div>
 				<div class="join__actions">
-					<a class="btn btn--a" href="<?php echo esc_url( wp_registration_url() ); ?>"><?php esc_html_e( 'أنشئ حساباً', 'retrovault' ); ?></a>
+					<a class="btn btn--a" href="<?php echo esc_url( rvt_register_url() ); ?>"><?php esc_html_e( 'أنشئ حساباً', 'retrovault' ); ?></a>
 					<a class="join__login" href="<?php echo esc_url( wp_login_url( home_url( '/' ) ) ); ?>"><?php esc_html_e( 'لدي حساب', 'retrovault' ); ?></a>
 				</div>
 			</div>

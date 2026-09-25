@@ -127,4 +127,52 @@ rv_assert(
 		&& '' === \RetroVault\Systems::for_extension( 'bin' ) && '' === \RetroVault\Systems::for_extension( 'cue' ) && '' === \RetroVault\Systems::for_extension( 'zip' ),
 	'a game system is guessed only from an unambiguous file extension'
 );
-WP_CLI::success( 'Security, REST, ROM authorization and save-persistence regressions passed.' );
+// Instant sign-up: the chosen password is stored exactly as wp_signon later compares it (slashed).
+add_filter( 'send_auth_cookies', '__return_false' );
+$mails = array();
+$capture_mail = static function ( $result, $atts ) use ( &$mails ) {
+	$mails[] = is_array( $atts['to'] ) ? implode( ',', $atts['to'] ) : $atts['to'];
+	return true;
+};
+add_filter( 'pre_wp_mail', $capture_mail, 10, 2 );
+$pagenow_before     = $GLOBALS['pagenow'];
+$GLOBALS['pagenow'] = 'wp-login.php';
+$_REQUEST['action'] = 'register';
+$_POST = array( 'rv_pass' => 'short' );
+$result = register_new_user( 'regsignup', 'regsignup@example.com' );
+rv_assert( is_wp_error( $result ) && in_array( 'rv_pass_short', $result->get_error_codes(), true ) && ! username_exists( 'regsignup' ), 'instant sign-up rejects a short password before creating the account' );
+$_POST = array( 'rv_pass' => wp_slash( "it's-a-pass1" ), 'rv_website' => 'http://spam.example' );
+$result = register_new_user( 'regsignup', 'regsignup@example.com' );
+rv_assert( is_wp_error( $result ) && in_array( 'rv_signup_blocked', $result->get_error_codes(), true ) && ! username_exists( 'regsignup' ), 'the hidden bot field blocks sign-up' );
+$_POST  = array( 'rv_pass' => wp_slash( "it's-a-pass1" ) );
+$member = register_new_user( 'regsignup', 'regsignup@example.com' );
+rv_assert( is_int( $member ) && get_current_user_id() === $member, 'instant sign-up creates the account and signs it in' );
+rv_assert( wp_authenticate( 'regsignup', wp_slash( "it's-a-pass1" ) ) instanceof WP_User, 'the chosen password works on the login form' );
+rv_assert( '' === get_user_meta( $member, 'default_password_nag', true ), 'a chosen password gets no change-password nag' );
+rv_assert( array( get_option( 'admin_email' ) ) === $mails, 'only the admin is emailed about the new member' );
+$GLOBALS['pagenow'] = $pagenow_before;
+unset( $_REQUEST['action'] );
+$_POST = array();
+
+// Account settings: the current password guards email and password changes.
+$settings = static function ( $input ) use ( $member ) {
+	return \RetroVault\Account::update_settings( get_userdata( $member ), $input );
+};
+$result = $settings( array( 'name' => 'x', 'email' => 'regsignup@example.com' ) );
+rv_assert( isset( $result['errors']['name'] ), 'a one-letter display name is rejected' );
+$result = $settings( array( 'name' => 'لاعب', 'email' => 'changed@example.com' ) );
+rv_assert( isset( $result['errors']['current_password'] ) && 'regsignup@example.com' === get_userdata( $member )->user_email, 'an email change needs the current password' );
+$result = $settings( array( 'name' => 'لاعب', 'email' => get_option( 'admin_email' ), 'current_password' => wp_slash( "it's-a-pass1" ) ) );
+rv_assert( isset( $result['errors']['email'] ), "another account's email is rejected" );
+$result = $settings( array( 'name' => 'لاعب', 'email' => 'regsignup@example.com', 'password' => wp_slash( 'N3w"Pass\\word' ), 'current_password' => wp_slash( 'wrong' ) ) );
+rv_assert( isset( $result['errors']['current_password'] ) && wp_authenticate( 'regsignup', wp_slash( "it's-a-pass1" ) ) instanceof WP_User, 'a wrong current password changes nothing' );
+$mails  = array();
+$result = $settings( array( 'name' => "لاعب O'Neil", 'email' => 'changed@example.com', 'password' => wp_slash( 'N3w"Pass\\word' ), 'current_password' => wp_slash( "it's-a-pass1" ) ) );
+$user   = get_userdata( $member );
+rv_assert( ! $result['errors'] && $result['password'] && "لاعب O'Neil" === $user->display_name && 'changed@example.com' === $user->user_email, 'name, email and password save together' );
+rv_assert( wp_authenticate( 'regsignup', wp_slash( 'N3w"Pass\\word' ) ) instanceof WP_User && is_wp_error( wp_authenticate( 'regsignup', wp_slash( "it's-a-pass1" ) ) ), 'the new password replaces the old one on the login form' );
+rv_assert( in_array( 'regsignup@example.com', $mails, true ), 'the previous address is told about the email change' );
+remove_filter( 'pre_wp_mail', $capture_mail, 10 );
+remove_filter( 'send_auth_cookies', '__return_false' );
+wp_set_current_user( 1 );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up and account regressions passed.' );

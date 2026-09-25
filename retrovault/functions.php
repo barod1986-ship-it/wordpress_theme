@@ -80,6 +80,7 @@ function rvt_assets() {
 			'rest'     => esc_url_raw( rest_url( 'retrovault/v1/' ) ),
 			'nonce'    => wp_create_nonce( 'wp_rest' ),
 			'decimal'  => isset( $wp_locale->number_format['decimal_point'] ) ? $wp_locale->number_format['decimal_point'] : '.',
+			'cookies'  => COOKIEPATH,
 			'i18n'     => array(
 				'saving'      => __( 'جارٍ الحفظ…', 'retrovault' ),
 				'saved'       => __( 'حُفظ تقييمك.', 'retrovault' ),
@@ -101,6 +102,7 @@ function rvt_assets() {
 				'posting'     => __( 'جارٍ النشر…', 'retrovault' ),
 				'posted'      => __( 'نُشر تعليقك.', 'retrovault' ),
 				'pending'     => __( 'وصل تعليقك، ويظهر للجميع بعد المراجعة.', 'retrovault' ),
+				'welcome'     => __( 'أهلاً بك! أُنشئ حسابك وأنت الآن مسجّل الدخول.', 'retrovault' ),
 			),
 		)
 	);

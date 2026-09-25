@@ -202,7 +202,9 @@ p {
 
 /* ---------- الأزرار والشارات والحقول ---------- */
 
-.btn {
+/* زر النموذج الذي ترسمه الإضافة (إعدادات الحساب) بشكل .btn.btn--a */
+.btn,
+.rv-form__button {
 	--btn-bg: var(--pill);
 	--btn-ink: var(--pill-ink);
 	display: inline-flex;
@@ -221,12 +223,14 @@ p {
 	box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .28), 0 1px 0 rgba(255, 255, 255, .35);
 }
 
-.btn:active {
+.btn:active,
+.rv-form__button:active {
 	transform: translateY(1px);
 	box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .28);
 }
 
-.btn--a {
+.btn--a,
+.rv-form__button {
 	--btn-bg: var(--a-red);
 	--btn-ink: #fff;
 }
@@ -284,7 +288,8 @@ p {
 }
 
 .input,
-.select {
+.select,
+.rv-field__input {
 	width: 100%;
 	min-height: 42px;
 	padding: 8px 12px;
@@ -303,7 +308,8 @@ p {
 }
 
 .input:focus,
-.select:focus {
+.select:focus,
+.rv-field__input:focus {
 	border-color: var(--focus);
 	outline: none;
 }
@@ -2847,6 +2853,115 @@ img.is-pixel {
 	border: 1.5px dashed var(--seam);
 	border-radius: var(--r-panel);
 	color: var(--ink-soft);
+}
+
+/* إعدادات الحساب: نموذج ترسمه الإضافة داخل القسم #settings */
+.rv-account-form {
+	display: grid;
+	gap: 18px;
+	max-width: 34rem;
+	padding: 20px;
+	border-radius: var(--r-panel);
+	background: var(--plastic-hi);
+	box-shadow: inset 0 0 0 1px var(--seam), 0 3px 0 var(--cart-depth);
+}
+
+.rv-field__label {
+	display: block;
+	margin-bottom: 6px;
+	font-weight: 500;
+}
+
+.rv-field__input[readonly] {
+	background: transparent;
+	color: var(--ink-soft);
+	box-shadow: inset 0 0 0 1px var(--seam);
+}
+
+.rv-field.has-error .rv-field__input {
+	border-color: var(--a-red);
+}
+
+.rv-field__hint,
+.rv-field__error {
+	margin: 6px 0 0;
+	font-size: var(--fs-14);
+}
+
+.rv-field__hint {
+	color: var(--ink-soft);
+}
+
+.rv-field__error {
+	padding-inline-start: 10px;
+	border-inline-start: 3px solid var(--a-red);
+	font-weight: 500;
+}
+
+.rv-field__pass {
+	position: relative;
+	display: block;
+}
+
+.js .rv-field__pass .rv-field__input {
+	padding-inline-end: 88px;
+}
+
+.rv-field__toggle {
+	position: absolute;
+	top: 50%;
+	inset-inline-end: 6px;
+	min-height: 32px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--r-pill);
+	background: var(--plastic-hi);
+	color: var(--ink);
+	font: 500 var(--fs-14)/1 var(--f-ui);
+	cursor: pointer;
+	box-shadow: inset 0 0 0 1px var(--seam);
+	transform: translateY(-50%);
+}
+
+.rv-field__toggle[aria-pressed="true"] {
+	box-shadow: inset 0 0 0 1.5px var(--focus);
+}
+
+.rv-form__notice {
+	margin: 0;
+	padding: 12px 14px;
+	border-inline-start: 4px solid var(--d-blue);
+	border-radius: 10px;
+	background: var(--plastic);
+}
+
+.rv-form__notice.is-ok {
+	border-inline-start-color: var(--c-green);
+	background: color-mix(in srgb, var(--c-green) 12%, var(--plastic-hi));
+	font-weight: 500;
+}
+
+.rv-form__notice.is-error {
+	border-inline-start-color: var(--a-red);
+	background: color-mix(in srgb, var(--a-red) 10%, var(--plastic-hi));
+}
+
+.rv-form__notice p {
+	margin: 0;
+	font-weight: 500;
+}
+
+.rv-form__notice ul {
+	margin: 6px 0 0;
+	padding-inline-start: 20px;
+}
+
+.rv-form__notice a {
+	color: var(--ink);
+}
+
+.rv-form__submit {
+	margin: 4px 0 0;
 }
 
 .save-grid {

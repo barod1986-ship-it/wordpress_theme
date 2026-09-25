@@ -76,6 +76,23 @@ function rvt_current_url() {
 }
 
 /**
+ * رابط «حساب جديد». مع التسجيل الفوري في الإضافة يعود الزائر بعده إلى $redirect (أو الصفحة الحالية).
+ *
+ * @param string $redirect وجهة العودة.
+ */
+function rvt_register_url( $redirect = '' ) {
+	return function_exists( 'rv_register_url' ) ? rv_register_url( $redirect ) : wp_registration_url();
+}
+
+/** رابط إعدادات الحساب: داخل صفحة «حسابي» إن وُجدت، وإلا الملف الشخصي في لوحة التحكم. */
+function rvt_account_settings_url() {
+	if ( rvt_has_core() && function_exists( 'rv_account_settings_form' ) && rv_account_url() ) {
+		return rv_account_url() . '#settings';
+	}
+	return get_edit_profile_url();
+}
+
+/**
  * نماذج GET تُسقط الاستعلام من رابط action؛ نحوّله لحقول مخفية (مهم مع الروابط غير الجميلة).
  *
  * @param string $url الرابط.
@@ -131,7 +148,7 @@ function rvt_account_menu() {
 		echo '<div class="account account--guest">';
 		printf( '<a class="account__login" href="%s">%s</a>', esc_url( wp_login_url( rvt_current_url() ) ), esc_html__( 'دخول', 'retrovault' ) );
 		if ( get_option( 'users_can_register' ) ) {
-			printf( '<a class="btn btn--pill btn--sm" href="%s">%s</a>', esc_url( wp_registration_url() ), esc_html__( 'حساب جديد', 'retrovault' ) );
+			printf( '<a class="btn btn--pill btn--sm" href="%s">%s</a>', esc_url( rvt_register_url() ), esc_html__( 'حساب جديد', 'retrovault' ) );
 		}
 		echo '</div>';
 		return;
@@ -170,7 +187,7 @@ function rvt_account_menu() {
 					<a href="<?php echo esc_url( admin_url( 'post-new.php?post_type=rv_game' ) ); ?>"><?php esc_html_e( 'إضافة لعبة', 'retrovault' ); ?></a>
 				<?php endif; ?>
 			<?php endif; ?>
-			<a href="<?php echo esc_url( get_edit_profile_url( $user->ID ) ); ?>"><?php esc_html_e( 'ملفي الشخصي', 'retrovault' ); ?></a>
+			<a href="<?php echo esc_url( rvt_account_settings_url() ); ?>"><?php esc_html_e( 'إعدادات الحساب', 'retrovault' ); ?></a>
 			<a href="<?php echo esc_url( wp_logout_url( rvt_current_url() ) ); ?>"><?php esc_html_e( 'تسجيل الخروج', 'retrovault' ); ?></a>
 		</div>
 	</details>
@@ -356,7 +373,7 @@ function rvt_rating_box( $game ) {
 				<a href="<?php echo esc_url( wp_login_url( get_permalink( $game['id'] ) . '#rate' ) ); ?>"><?php esc_html_e( 'سجّل دخولك', 'retrovault' ); ?></a>
 				<?php if ( get_option( 'users_can_register' ) ) : ?>
 					<?php esc_html_e( 'أو', 'retrovault' ); ?>
-					<a href="<?php echo esc_url( wp_registration_url() ); ?>"><?php esc_html_e( 'أنشئ حساباً مجانياً', 'retrovault' ); ?></a>
+					<a href="<?php echo esc_url( rvt_register_url( get_permalink( $game['id'] ) . '#rate' ) ); ?>"><?php esc_html_e( 'أنشئ حساباً مجانياً', 'retrovault' ); ?></a>
 				<?php endif; ?>
 			</p>
 		<?php endif; ?>

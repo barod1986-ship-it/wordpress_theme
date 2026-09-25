@@ -242,6 +242,23 @@ function rv_is_account_page() {
 	return Account::is_page();
 }
 
+/**
+ * نموذج «إعدادات الحساب» (الاسم الظاهر والبريد وكلمة المرور) داخل صفحة «حسابي»، بلا لوحة التحكم.
+ * يُرسل للصفحة نفسها، ويعرض رسالة الحفظ أو الأخطاء. التنسيق على القالب (الكلاسات rv-form وrv-field).
+ */
+function rv_account_settings_form() {
+	Account::settings_form();
+}
+
+/**
+ * رابط «حساب جديد». مع التسجيل الفوري يعود الزائر بعد التسجيل إلى $redirect، أو الصفحة الحالية.
+ *
+ * @param string $redirect وجهة العودة (يُسمح بـ #القسم في آخرها).
+ */
+function rv_register_url( $redirect = '' ) {
+	return RetroVault\Signup::url( $redirect );
+}
+
 /** هل مزامنة حفظ اللعبة الداخلي (SRAM) مفعّلة؟ */
 function rv_sram_sync_enabled() {
 	return Saves::sram_enabled();

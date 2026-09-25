@@ -214,6 +214,22 @@ rest me/notify email -H 'Content-Type: application/json' -d '{"email":true}'
 expect 200 /account/ "$TMP/member.jar"
 expect 302 /wp-admin/ "$TMP/member.jar"
 
+echo "== Instant sign-up"
+# كلمة مرور فيها ' لأن ووردبريس يضيف لها شرطة مائلة، والدخول لاحقاً يقارنها بالصيغة نفسها.
+signup=$(curl -s -c "$TMP/newbie.jar" -o /dev/null -w '%{http_code} %{redirect_url}' \
+	--data-urlencode 'user_login=newbie' --data-urlencode 'user_email=newbie@example.com' \
+	--data-urlencode "rv_pass=it's-a-pass1" --data-urlencode "redirect_to=$BASE/games/pixel-quest/" \
+	-d 'wp-submit=Register' "$BASE/wp-login.php?action=register")
+check "sign-up returns to the page it started from" "302 $BASE/games/pixel-quest/" "$signup"
+expect 200 /account/ "$TMP/newbie.jar"
+if grep -q 'rv-account-form' "$TMP/body"; then
+	echo "ok account settings form on the account page"
+else
+	fail "account settings form is missing"
+fi
+check "the chosen password logs in" 302 "$(status -b 'wordpress_test_cookie=WP%20Cookie%20check' --data-urlencode 'log=newbie' \
+	--data-urlencode "pwd=it's-a-pass1" -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php")"
+
 echo "== Admin"
 login admin
 for path in /wp-admin/ '/wp-admin/edit.php?post_type=rv_game' '/wp-admin/post-new.php?post_type=rv_game' \

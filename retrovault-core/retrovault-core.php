@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       RetroVault Core
  * Plugin URI:        https://github.com/barod1986-ship-it/wordpress_theme
- * Description:       النواة الوظيفية لمكتبة ألعاب الرترو: نوع محتوى «لعبة»، الأنظمة والأنواع، مشغّل EmulatorJS داخل المتصفح، التقييم بالنجوم، الحفظ السحابي (حالات + حفظ اللعبة الداخلي) والمفضلة وصفحة حساب للأعضاء، يوميات التطوير، إشعارات المتابعين، تطبيق ويب يعمل بدون إنترنت، الإحصائيات وواجهة REST.
+ * Description:       النواة الوظيفية لمكتبة ألعاب الرترو: نوع محتوى «لعبة»، الأنظمة والأنواع، مشغّل EmulatorJS داخل المتصفح، التقييم بالنجوم، الحفظ السحابي (حالات + حفظ اللعبة الداخلي) والمفضلة، التسجيل الفوري وصفحة حساب للأعضاء، يوميات التطوير، إشعارات المتابعين، تطبيق ويب يعمل بدون إنترنت، الإحصائيات وواجهة REST.
  * Version:           1.10.0
  * Requires at least: 6.3
  * Requires PHP:      7.4
@@ -26,7 +26,7 @@ define( 'RETROVAULT_FILE', __FILE__ );
 define( 'RETROVAULT_PATH', plugin_dir_path( __FILE__ ) );
 define( 'RETROVAULT_URL', plugin_dir_url( __FILE__ ) );
 
-foreach ( array( 'systems', 'settings', 'post-types', 'game-meta', 'games', 'uploads', 'roms', 'ratings', 'stats', 'query', 'player', 'rest', 'favorites', 'saves', 'account', 'devlog', 'notifier', 'pwa', 'analytics', 'comments', 'members', 'seo', 'admin', 'installer', 'updater' ) as $retrovault_file ) {
+foreach ( array( 'systems', 'settings', 'post-types', 'game-meta', 'games', 'uploads', 'roms', 'ratings', 'stats', 'query', 'player', 'rest', 'favorites', 'saves', 'account', 'devlog', 'notifier', 'pwa', 'analytics', 'comments', 'members', 'signup', 'seo', 'admin', 'installer', 'updater' ) as $retrovault_file ) {
 	require_once RETROVAULT_PATH . "includes/class-{$retrovault_file}.php";
 }
 unset( $retrovault_file );
@@ -59,6 +59,7 @@ add_action(
 		RetroVault\Analytics::init();
 		RetroVault\Comments::init();
 		RetroVault\Members::init();
+		RetroVault\Signup::init();
 		RetroVault\Seo::init();
 		// خارج is_admin(): ووردبريس يفحص التحديثات في مهام الخلفية أيضاً.
 		RetroVault\Updater::init();

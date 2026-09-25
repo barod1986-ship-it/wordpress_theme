@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحة «حسابي»: استكمل اللعب (الحفظ السحابي)، المفضلة، التقييمات.
+ * صفحة «حسابي»: استكمل اللعب (الحفظ السحابي)، المفضلة، التقييمات، إعدادات الحساب.
  *
  * @package RetroVault
  */
@@ -13,6 +13,7 @@ $rvt_saves   = rv_get_saves( $rvt_user->ID );
 $rvt_favs    = rv_get_favorites( $rvt_user->ID );
 $rvt_ratings = rv_get_user_ratings( $rvt_user->ID );
 $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->ID, 10 ) : array();
+$rvt_form    = function_exists( 'rv_account_settings_form' );
 ?>
 <div class="account-page">
 	<header class="account-head">
@@ -27,7 +28,7 @@ $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->
 			</p>
 		</div>
 		<div class="account-head__actions">
-			<a class="btn btn--pill btn--sm" href="<?php echo esc_url( get_edit_profile_url( $rvt_user->ID ) ); ?>"><?php esc_html_e( 'تعديل الملف الشخصي', 'retrovault' ); ?></a>
+			<a class="btn btn--pill btn--sm" href="<?php echo esc_url( $rvt_form ? '#settings' : get_edit_profile_url( $rvt_user->ID ) ); ?>"><?php esc_html_e( 'إعدادات الحساب', 'retrovault' ); ?></a>
 			<a class="account-head__logout" href="<?php echo esc_url( wp_logout_url( home_url( '/' ) ) ); ?>"><?php esc_html_e( 'تسجيل الخروج', 'retrovault' ); ?></a>
 		</div>
 	</header>
@@ -226,4 +227,14 @@ $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->
 			<p class="account-empty"><?php esc_html_e( 'لم تقيّم أي لعبة بعد. تقييمك يساعد الآخرين يعرفون من أين يبدؤون.', 'retrovault' ); ?></p>
 		<?php endif; ?>
 	</section>
+
+	<?php if ( $rvt_form ) : ?>
+		<section class="account-section" id="settings" aria-labelledby="settings-title">
+			<h2 class="account-section__title" id="settings-title">
+				<?php echo rvt_icon( 'user' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<?php esc_html_e( 'إعدادات الحساب', 'retrovault' ); ?>
+			</h2>
+			<?php rv_account_settings_form(); ?>
+		</section>
+	<?php endif; ?>
 </div>
