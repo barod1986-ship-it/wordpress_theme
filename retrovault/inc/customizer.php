@@ -75,6 +75,9 @@ add_action(
 			'rvt_show_updated' => __( 'إظهار «حُدّثت مؤخراً»', 'retrovault' ),
 			'rvt_show_devlog'  => __( 'إظهار «من يوميات التطوير»', 'retrovault' ),
 		);
+		$notes   = array(
+			'rvt_show_updated' => __( 'ألعاب عُدّلت بعد نشرها بيوم أو أكثر، عدا ما يظهر في «وصلت حديثاً». لا يظهر الرف إن لم توجد.', 'retrovault' ),
+		);
 		foreach ( $toggles as $id => $label ) {
 			$wp_customize->add_setting(
 				$id,
@@ -86,9 +89,10 @@ add_action(
 			$wp_customize->add_control(
 				$id,
 				array(
-					'label'   => $label,
-					'section' => 'rvt_home',
-					'type'    => 'checkbox',
+					'label'       => $label,
+					'description' => isset( $notes[ $id ] ) ? $notes[ $id ] : '',
+					'section'     => 'rvt_home',
+					'type'        => 'checkbox',
 				)
 			);
 		}

@@ -384,6 +384,21 @@ function rvt_menu_games( $count = 8 ) {
 	return $games;
 }
 
+/**
+ * عدد الفلاتر المختارة (النظام والنوع واللاعبون والحالة؛ البحث والترتيب لا يُحسبان).
+ *
+ * @param array $filters من rv_current_filters().
+ */
+function rvt_active_filters( $filters ) {
+	$n = 0;
+	foreach ( array( 'system', 'genre', 'players', 'status' ) as $key ) {
+		if ( ! empty( $filters[ $key ] ) ) {
+			++$n;
+		}
+	}
+	return $n;
+}
+
 /** جملة الإجماليات تحت أزرار الواجهة. */
 function rvt_totals_sentence() {
 	$t = rv_totals();

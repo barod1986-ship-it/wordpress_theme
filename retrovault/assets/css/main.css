@@ -23,7 +23,7 @@
 	--groove: rgba(38, 35, 45, .16);
 	--cart-depth: rgba(38, 35, 45, .2);
 	--ink: #25232b;
-	--ink-soft: #4e4b57;
+	--ink-soft: #48454f;
 	--ink-on-lo: #45424e;
 	--link: #2e46a6;
 	--key: #eeedf1;
@@ -915,12 +915,16 @@ p {
 .slots {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(min(46%, 170px), 1fr));
+	/* كل المنافذ بارتفاع واحد مهما طال اسم الجهاز */
+	grid-auto-rows: 1fr;
 	gap: 12px;
 }
 
 .slot {
 	position: relative;
 	display: grid;
+	/* الاختصار ثم الاسم، والعدد دائماً في الأسفل */
+	grid-template-rows: auto 1fr auto;
 	gap: 2px;
 	padding: 16px 14px 12px;
 	overflow: hidden;
@@ -998,6 +1002,7 @@ p {
 
 .slots--compact .slot {
 	flex: none;
+	grid-template-rows: auto;
 	padding: 12px 16px 8px;
 }
 
@@ -1035,6 +1040,22 @@ p {
 	background: var(--plastic-hi) linear-gradient(to bottom, rgba(255, 255, 255, .3), transparent 45%);
 	/* الزاوية المقصوصة مثل خرطوشة Game Boy */
 	clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+	transition: transform .15s ease-out;
+}
+
+/* تُسحب الخرطوشة قليلاً عند المرور وتُدفع عند الضغط (الظل يتبعها لأنه على .cart) */
+@media (hover: hover) {
+	.cart__link:hover .cart__shell {
+		transform: translateY(-4px);
+	}
+}
+
+.cart__link:focus-visible .cart__shell {
+	transform: translateY(-4px);
+}
+
+.cart__link:active .cart__shell {
+	transform: translateY(1px);
 }
 
 /* حزوز الإمساك أعلى الخرطوشة */
@@ -1119,18 +1140,40 @@ p {
 	-webkit-line-clamp: 2;
 }
 
+/* النوع أولاً والتقييم في الطرف الآخر، في المكان نفسه دائماً */
 .cart__meta {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
 	min-height: 22px;
 	margin: auto 2px 0;
 	color: var(--ink-soft);
 	font-size: var(--fs-14);
 }
 
-.cart__avg {
+.cart__genre {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cart__score {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 4px;
+	margin-inline-start: auto;
+	color: var(--ink);
 	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+/* نجمة البكسل 9×9: بمضاعف 1.5 لتبقى حوافها حادة */
+.cart__score .rvt-icon {
+	width: 13.5px;
+	height: 13.5px;
+	color: var(--b-yellow);
 }
 
 .cart-grid {
@@ -1216,13 +1259,15 @@ p {
 
 .filters {
 	display: grid;
-	grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr));
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	gap: 12px;
-	margin-block: 18px 26px;
+	margin-block: 18px 22px;
 	padding: 16px;
 	border-radius: var(--r-panel);
 	background: var(--plastic-hi);
 	box-shadow: inset 0 0 0 1px var(--seam);
+	/* تحت الترويسة الثابتة عند الرجوع إليه بعد تغيير الصفحة */
+	scroll-margin-top: 100px;
 }
 
 .field {
@@ -1237,26 +1282,70 @@ p {
 	font-weight: 500;
 }
 
-.filters__actions {
+/* الصف الأول: البحث والترتيب. الثاني: الفلاتر الأربع بعرض يتسع لأسماء الأنظمة الطويلة */
+.field--q {
+	grid-column: span 3;
+}
+
+.filters__more {
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.filters__submit {
 	display: flex;
 	grid-column: 1 / -1;
-	align-items: center;
-	gap: 16px;
+}
+
+.js .filters__submit,
+.filters__toggle {
+	display: none;
+}
+
+.filters__count {
+	display: inline-grid;
+	place-items: center;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 6px;
+	border-radius: var(--r-pill);
+	background: var(--a-red);
+	color: #fff;
+	font-size: var(--fs-14);
+	line-height: 1;
+}
+
+.filters__count[hidden] {
+	display: none;
 }
 
 @media (max-width: 1000px) {
+	.filters__more {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 640px) {
 	.filters {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	.field--q {
 		grid-column: 1 / -1;
 	}
-}
 
-@media (max-width: 560px) {
-	.filters {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	/* على الجوال: البحث، ثم الترتيب وبجانبه زر يفتح الفلاتر الأربع */
+	.js .filters__toggle {
+		display: inline-flex;
+		align-self: end;
+		min-height: 42px;
+		padding: 0 14px;
+	}
+
+	.js .filters:not(.is-open) .filters__more {
+		display: none;
 	}
 }
 
@@ -1264,9 +1353,21 @@ p {
 	opacity: .5;
 }
 
+.results__bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px 16px;
+	margin-bottom: 18px;
+}
+
 .results__count {
-	margin: 0 0 18px;
+	margin: 0;
 	color: var(--ink-soft);
+}
+
+.results__reset {
+	font-weight: 500;
 }
 
 .empty {
@@ -3345,6 +3446,11 @@ img.is-pixel {
 	}
 }
 
+/* قسم «مقالات وصفحات» بعد شبكة الألعاب في نتائج البحث */
+.cart-grid + .section__title {
+	margin-top: 48px;
+}
+
 .search-list {
 	display: grid;
 	gap: 16px;
@@ -3431,7 +3537,7 @@ img.is-pixel {
 
 .site-footer__grid {
 	display: grid;
-	grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 1fr);
 	gap: 32px;
 }
 
@@ -3452,6 +3558,18 @@ img.is-pixel {
 	margin: 0;
 	padding: 0;
 	list-style: none;
+}
+
+/* قائمة الأنظمة الطويلة في عمودين بدل عمود واحد طويل */
+.site-footer .site-footer__list--cols {
+	display: block;
+	columns: 2;
+	column-gap: 24px;
+}
+
+.site-footer__list--cols li {
+	margin-bottom: 6px;
+	break-inside: avoid;
 }
 
 .site-footer a {

@@ -124,17 +124,39 @@
 			}
 		});
 
-		/* تحميل مسبق للأغلفة لتبديل فوري */
-		items.forEach(function (a) {
-			var src = a.getAttribute('data-art');
-			if (src) { var im = new Image(); im.src = src; }
-		});
+		/* تحميل مسبق للأغلفة لتبديل فوري: بعد اكتمال الصفحة حتى لا تزاحم ما يظهر أولاً، وفقط إن كانت
+		 * المعاينة ظاهرة (على الجوال تظهر القائمة وحدها). */
+		var preview = $('.mc__preview', mc);
+		var preload = function () {
+			if (!preview || getComputedStyle(preview).display === 'none') { return; }
+			items.forEach(function (a) {
+				var src = a.getAttribute('data-art');
+				if (src) { var im = new Image(); im.src = src; }
+			});
+		};
+		var idle = function () { (window.requestIdleCallback || setTimeout)(preload); };
+		if (document.readyState === 'complete') { idle(); }
+		else { window.addEventListener('load', idle); }
 	}
 
 	/* ---------- الفلترة دون إعادة تحميل الصفحة ---------- */
 	var form = $('[data-filters]');
 	if (form && window.fetch && window.DOMParser && window.history && window.URL) {
 		var controller = null;
+		var fields = $$('select, input[type="search"]', form);
+		var search = $('input[type="search"]', form);
+		var status = $('[data-results-status]');
+		var toggle = $('[data-filters-toggle]', form);
+		var badge = $('[data-filters-count]', form);
+		var current = window.location.href;
+		var typing = false;
+		var typingTimer = 0;
+
+		var values = function () {
+			var out = {};
+			fields.forEach(function (el) { out[el.name] = el.value; });
+			return out;
+		};
 
 		var urlFromForm = function () {
 			var url = new URL(form.getAttribute('action'), window.location.href);
@@ -145,21 +167,27 @@
 			return url.toString();
 		};
 
-		var syncForm = function (url) {
-			var params = new URL(url).searchParams;
-			$$('select, input[type="search"]', form).forEach(function (el) {
-				if (el.name === 'system' && !params.has('system') && el.value && form.dataset.lockedSystem) { return; }
-				var v = params.get(el.name);
-				el.value = v !== null ? v : (el.name === 'sort' ? 'newest' : '');
-			});
+		/* عدد الفلاتر المختارة على زر «الفلاتر» (الجوال) */
+		var updateCount = function () {
+			if (!badge) { return; }
+			var n = $$('.filters__more select', form).filter(function (el) { return el.value !== ''; }).length;
+			badge.textContent = String(n);
+			badge.hidden = !n;
 		};
 
-		var load = function (url, push) {
+		/* الرجوع والتقدم: قيم الحقول محفوظة مع كل خطوة في السجل (الأولى كما رسمها الخادم) */
+		window.history.replaceState({ rvFilters: values() }, '');
+
+		var load = function (url, mode) {
 			var results = document.getElementById('rv-results');
 			if (!results) { window.location.href = url; return; }
+			if (url === current && mode !== 'pop') { return; }
 			if (controller) { controller.abort(); }
 			controller = window.AbortController ? new AbortController() : null;
 			results.setAttribute('aria-busy', 'true');
+			if (mode === 'push') { window.history.pushState({ rvFilters: values() }, '', url); }
+			else if (mode === 'replace') { window.history.replaceState({ rvFilters: values() }, '', url); }
+			current = url;
 
 			fetch(url, { credentials: 'same-origin', signal: controller ? controller.signal : undefined })
 				.then(function (res) {
@@ -171,8 +199,13 @@
 					var fresh = doc.getElementById('rv-results');
 					if (!fresh) { window.location.href = url; return; }
 					results.replaceWith(fresh);
+					/* عنوان المكتبة وشريط الأنظمة يتبعان الفلتر (مثلاً اختيار نظام من القائمة) */
+					$$('[data-filters-sync]').forEach(function (el) {
+						var next = doc.querySelector('[data-filters-sync="' + el.getAttribute('data-filters-sync') + '"]');
+						if (next) { el.replaceWith(next); }
+					});
 					document.title = doc.title;
-					if (push) { window.history.pushState({ rvFilters: true }, '', url); }
+					if (status) { status.textContent = fresh.getAttribute('data-count') || ''; }
 				})
 				.catch(function (err) {
 					if (err && err.name === 'AbortError') { return; }
@@ -185,22 +218,52 @@
 		};
 
 		form.addEventListener('change', function (e) {
-			if (e.target.tagName === 'SELECT') { load(urlFromForm(), true); }
+			if (e.target.tagName !== 'SELECT') { return; }
+			typing = false;
+			updateCount();
+			load(urlFromForm(), 'push');
 		});
 		form.addEventListener('submit', function (e) {
 			e.preventDefault();
-			load(urlFromForm(), true);
+			clearTimeout(typingTimer);
+			typing = false;
+			load(urlFromForm(), 'push');
 		});
+		/* البحث أثناء الكتابة: خطوة واحدة في السجل لكل كلمة، لا لكل حرف */
+		if (search) {
+			search.addEventListener('input', function () {
+				clearTimeout(typingTimer);
+				typingTimer = setTimeout(function () {
+					load(urlFromForm(), typing ? 'replace' : 'push');
+					typing = true;
+				}, 400);
+			});
+			search.addEventListener('blur', function () { typing = false; });
+		}
+		if (toggle) {
+			toggle.addEventListener('click', function () {
+				var open = form.classList.toggle('is-open');
+				toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+			});
+		}
 		document.addEventListener('click', function (e) {
 			var a = e.target.closest('#rv-results .pagination a');
 			if (!a || e.metaKey || e.ctrlKey || e.shiftKey) { return; }
 			e.preventDefault();
-			load(a.href, true);
+			typing = false;
+			load(a.href, 'push');
 			form.scrollIntoView({ block: 'start', behavior: 'smooth' });
 		});
-		window.addEventListener('popstate', function () {
-			syncForm(window.location.href);
-			load(window.location.href, false);
+		window.addEventListener('popstate', function (e) {
+			if (!e.state || !e.state.rvFilters) { return; }
+			var saved = e.state.rvFilters;
+			fields.forEach(function (el) {
+				if (Object.prototype.hasOwnProperty.call(saved, el.name)) { el.value = saved[el.name]; }
+			});
+			clearTimeout(typingTimer);
+			typing = false;
+			updateCount();
+			load(window.location.href, 'pop');
 		});
 	}
 

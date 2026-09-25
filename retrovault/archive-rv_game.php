@@ -14,7 +14,7 @@ $rvt_head    = rvt_library_heading();
 $rvt_system  = $rvt_head['system'];
 ?>
 <div class="shell library">
-	<header class="library__head"<?php echo $rvt_system ? ' style="--sys:' . esc_attr( $rvt_system['color'] ) . '"' : ''; ?>>
+	<header class="library__head"<?php echo $rvt_system ? ' style="--sys:' . esc_attr( $rvt_system['color'] ) . '"' : ''; ?> data-filters-sync="head">
 		<?php rvt_breadcrumbs(); ?>
 		<h1 class="library__title">
 			<?php if ( $rvt_system ) : ?>
@@ -37,8 +37,9 @@ $rvt_system  = $rvt_head['system'];
 		)
 	);
 	get_template_part( 'template-parts/filters', null, array( 'filters' => $rvt_filters ) );
-	get_template_part( 'template-parts/results' );
 	?>
+	<p class="screen-reader-text" role="status" data-results-status></p>
+	<?php get_template_part( 'template-parts/results' ); ?>
 </div>
 <?php
 get_footer();

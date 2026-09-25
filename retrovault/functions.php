@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RVT_VERSION', '1.7.2' );
+define( 'RVT_VERSION', '1.8.0' );
 
 require_once get_template_directory() . '/inc/icons.php';
 require_once get_template_directory() . '/inc/customizer.php';
@@ -143,6 +143,18 @@ add_action(
 		}
 	},
 	9
+);
+
+/*
+ * كلاس js على <html> قبل أول رسم: ما يطويه السكربت (فلاتر المكتبة على الجوال) يظهر مطوياً من البداية
+ * بدل أن يُطوى أمام الزائر فتقفز الصفحة. بدون JavaScript يبقى كل شيء ظاهراً ويعمل كنموذج عادي.
+ */
+add_action(
+	'wp_head',
+	static function () {
+		wp_print_inline_script_tag( "document.documentElement.classList.add('js');" );
+	},
+	1
 );
 
 add_filter(
