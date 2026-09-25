@@ -73,6 +73,11 @@ body.login {
 	color: #2e46a6;
 }
 
+/* التسجيل الفوري (الإضافة): كلمة المرور وتلميحات الحقول */
+.login .rv-signup-hint {
+	color: #48454f;
+}
+
 .login .message,
 .login .notice,
 .login #login_error {
@@ -114,6 +119,25 @@ body.login {
 
 	.login #nav a,
 	.login #backtoblog a {
+		color: #9fb0ff;
+	}
+
+	.login .rv-signup-hint {
+		color: #b4b1bd;
+	}
+
+	/* صناديق الرسائل بيضاء في ووردبريس، والنص فاتح هنا */
+	.login .message,
+	.login .notice,
+	.login #login_error {
+		background: #302f36;
+		color: #ecebf0;
+	}
+
+	.login .message a,
+	.login .notice a,
+	.login #login_error a,
+	.login .button.wp-hide-pw .dashicons {
 		color: #9fb0ff;
 	}
 }

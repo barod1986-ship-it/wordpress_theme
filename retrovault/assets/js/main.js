@@ -12,7 +12,7 @@
 	/* ---------- إشعار عابر ---------- */
 	var toastEl = null;
 	var toastTimer = 0;
-	function toast(msg) {
+	function toast(msg, ms) {
 		if (!toastEl) {
 			toastEl = document.createElement('div');
 			toastEl.className = 'toast';
@@ -22,7 +22,14 @@
 		toastEl.textContent = msg;
 		toastEl.classList.add('is-on');
 		clearTimeout(toastTimer);
-		toastTimer = setTimeout(function () { toastEl.classList.remove('is-on'); }, 2600);
+		toastTimer = setTimeout(function () { toastEl.classList.remove('is-on'); }, ms || 2600);
+	}
+
+	/* ترحيب بعد التسجيل الفوري، مرة واحدة (الإضافة تضع ملف تعريف ارتباط لبضع دقائق) */
+	if (/(?:^|;\s*)rv_welcome=1(?:;|$)/.test(document.cookie) && i18n.welcome) {
+		document.cookie = 'rv_welcome=; Max-Age=0; path=' + (RVT.cookies || '/');
+		/* بعد رسم الصفحة، فيقرؤه قارئ الشاشة */
+		setTimeout(function () { toast(i18n.welcome, 6000); }, 400);
 	}
 
 	/* ---------- العدّ بالعربية (مطابق لدالة rvt_count في PHP) ---------- */

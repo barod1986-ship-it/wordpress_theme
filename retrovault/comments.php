@@ -61,7 +61,7 @@ $rvt_count   = (int) get_comments_number();
 			<div class="members-only__actions">
 				<a class="btn btn--a btn--sm" href="<?php echo esc_url( wp_login_url( get_permalink() . '#comments' ) ); ?>"><?php esc_html_e( 'دخول', 'retrovault' ); ?></a>
 				<?php if ( get_option( 'users_can_register' ) ) : ?>
-					<a class="btn btn--pill btn--sm" href="<?php echo esc_url( wp_registration_url() ); ?>"><?php esc_html_e( 'حساب جديد', 'retrovault' ); ?></a>
+					<a class="btn btn--pill btn--sm" href="<?php echo esc_url( rvt_register_url( get_permalink() . '#comments' ) ); ?>"><?php esc_html_e( 'حساب جديد', 'retrovault' ); ?></a>
 				<?php endif; ?>
 			</div>
 		</div>

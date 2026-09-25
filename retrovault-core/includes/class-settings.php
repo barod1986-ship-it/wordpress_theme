@@ -39,9 +39,10 @@ final class Settings {
 			'save_max_mb' => 32,
 			'netplay'     => 0,
 			'netplay_url' => '',
-			'notify_email' => 1,
-			'pwa'          => 1,
-			'app_name'     => '',
+			'notify_email'   => 1,
+			'pwa'            => 1,
+			'app_name'       => '',
+			'instant_signup' => 1,
 		);
 	}
 
@@ -138,6 +139,7 @@ final class Settings {
 		$out['save_max_mb'] = isset( $input['save_max_mb'] ) ? max( 1, min( 256, absint( $input['save_max_mb'] ) ) ) : 32;
 		$out['netplay']     = empty( $input['netplay'] ) ? 0 : 1;
 		$out['notify_email'] = empty( $input['notify_email'] ) ? 0 : 1;
+		$out['instant_signup'] = empty( $input['instant_signup'] ) ? 0 : 1;
 		$out['pwa']          = empty( $input['pwa'] ) ? 0 : 1;
 		$out['app_name']     = isset( $input['app_name'] ) ? sanitize_text_field( $input['app_name'] ) : '';
 		$out['netplay_url'] = isset( $input['netplay_url'] ) ? untrailingslashit( esc_url_raw( trim( $input['netplay_url'] ) ) ) : '';
@@ -233,6 +235,24 @@ final class Settings {
 								echo esc_html( sprintf( __( 'حفظ NES وSNES وGBA صغير (أقل من 1 ميغابايت)، أما N64 وPS1 فقد يصل لعدة ميغابايت. حد الرفع الحالي في خادمك: %s.', 'retrovault-core' ), size_format( wp_max_upload_size() ) ) );
 								?>
 							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'تسجيل الأعضاء', 'retrovault-core' ); ?></th>
+						<td>
+							<label><input type="checkbox" name="<?php echo esc_attr( $name ); ?>[instant_signup]" value="1" <?php checked( $o['instant_signup'], 1 ); ?>> <?php esc_html_e( 'تسجيل فوري: يختار الزائر كلمة مروره في نموذج التسجيل، فيدخل مباشرة ويعود للصفحة التي كان فيها', 'retrovault-core' ); ?></label>
+							<p class="description"><?php esc_html_e( 'بدونه يتبع التسجيل طريقة ووردبريس: رابط لتعيين كلمة المرور يصل بالبريد، ولا يدخل الزائر قبل فتحه، فيتعطل التسجيل إن كان بريد موقعك لا يصل. التسجيل الفوري لا يتحقق من ملكية البريد، ويصلك إشعار «عضو جديد» كالمعتاد. الأعضاء يعدّلون أسماءهم وبريدهم وكلمات مرورهم من صفحة «حسابي».', 'retrovault-core' ); ?></p>
+							<?php if ( ! get_option( 'users_can_register' ) ) : ?>
+								<p class="description">
+									<?php
+									echo wp_kses(
+										/* translators: %s: settings URL */
+										sprintf( __( 'التسجيل مغلق حالياً: فعّل «يستطيع أي شخص التسجيل» من <a href="%s">الإعدادات ← عام</a>.', 'retrovault-core' ), esc_url( admin_url( 'options-general.php' ) ) ),
+										array( 'a' => array( 'href' => array() ) )
+									);
+									?>
+								</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 					<tr>
