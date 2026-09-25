@@ -318,4 +318,27 @@ $_GET = array( 'genre' => 'rpg' );
 $filtered = \RetroVault\Query::is_filtered();
 $_GET = array();
 rv_assert( $filtered && ! \RetroVault\Query::is_filtered(), 'a genre filter on a system page counts as filtered, the page itself does not' );
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit and search-engine regressions passed.' );
+
+// Player (1.16): download failures explained, Site Health test registered, direct links checked before publishing.
+wp_set_current_user( 0 );
+$pixel = \RetroVault\Games::get( get_page_by_path( 'pixel-quest', OBJECT, 'rv_game' ) );
+$ui    = \RetroVault\Player::ui_config( $pixel );
+$keys  = array( 'offline', 'network', 'cors', 'mixed', 'session', 'token', 'origin', 'missing', 'password', 'blocked', 'server', 'link', 'bios' );
+rv_assert( ! array_diff( $keys, array_keys( $ui['i18n'] ) ) && ! isset( $ui['admin'] ), 'visitors get a message for every download failure and no server details' );
+wp_set_current_user( 1 );
+$ui = \RetroVault\Player::ui_config( $pixel );
+rv_assert( isset( $ui['admin'] ) && ! array_diff( $keys, array_keys( $ui['admin']['hints'] ) ) && false !== strpos( $ui['admin']['code']['token'], '/play/' ) && false === strpos( $ui['admin']['code']['token'], 'pixel-quest' ), 'editors get a fix for every failure, with generic cache paths' );
+wp_set_current_user( 0 );
+$tests = apply_filters( 'site_status_tests', array( 'direct' => array(), 'async' => array() ) );
+rv_assert( isset( $tests['async']['retrovault_roms']['has_rest'] ) && is_callable( $tests['async']['retrovault_roms']['async_direct_test'] ), 'Site Health checks that game files reach the player' );
+$route = rest_get_server()->dispatch( new WP_REST_Request( 'GET', '/retrovault/v1/site-health/roms' ) );
+rv_assert( in_array( $route->get_status(), array( 401, 403 ), true ), 'the Site Health route is for administrators only' );
+rv_assert( null === \RetroVault\Roms::check_link( home_url( '/wp-content/uploads/game.nes' ) ), 'a direct link on the same site needs no permission' );
+$https = static function ( $url ) {
+	return set_url_scheme( $url, 'https' );
+};
+add_filter( 'home_url', $https );
+$mixed = \RetroVault\Roms::check_link( 'http://files.example.com/game.nes' );
+remove_filter( 'home_url', $https );
+rv_assert( is_array( $mixed ) && 'error' === $mixed[0], 'an http direct link on an https site is flagged before visitors hit it' );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit, search-engine and player regressions passed.' );

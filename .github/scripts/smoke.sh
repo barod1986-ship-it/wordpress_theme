@@ -212,6 +212,8 @@ fi
 echo "== Game file protection"
 # status <وسائط curl...>: رمز الرد فقط. check <الوصف> <المتوقع> <الفعلي>.
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+# reason <وسائط curl...>: سبب الرفض كما يقرؤه المشغّل (ترويسة X-RetroVault-Rom).
+reason() { curl -s -o /dev/null -D - "$@" | tr -d '\r' | sed -n 's/^[Xx]-[Rr]etro[Vv]ault-[Rr]om: //p' | tail -n 1; }
 xhr=(-H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Dest: empty')
 curl -s -D "$TMP/player.headers" -c "$TMP/player.jar" "$BASE/games/pixel-quest/play/" > "$TMP/player.html"
 rom=$(grep -oE 'EJS_gameUrl = "[^"]+"' "$TMP/player.html" | sed -e 's/^EJS_gameUrl = "//' -e 's/"$//' -e 's#\\/#/#g' || true)
@@ -226,10 +228,14 @@ case "$rom" in
 	*) fail "player does not get the protected link: $rom" ;;
 esac
 check "game file for the player" 200 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+check "game file answer is marked for the player" ok "$(reason -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
 check "game file size check (HEAD)" 200 "$(status -b "$TMP/player.jar" -I "${xhr[@]}" "$rom")"
 check "copied link without its browser session" 403 "$(status "${xhr[@]}" "$rom")"
 curl -s -c "$TMP/other-player.jar" "$BASE/games/pixel-quest/play/" > /dev/null
 check "copied link in another browser session" 403 "$(status -b "$TMP/other-player.jar" "${xhr[@]}" "$rom")"
+check "player is told the cookie is missing" session "$(reason "${xhr[@]}" "$rom")"
+check "player is told the link belongs to another session" token "$(reason -b "$TMP/other-player.jar" "${xhr[@]}" "$rom")"
+check "browser tab is told it is not the player" origin "$(reason -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
 check "game file opened in a browser tab" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
 check "game file requested by another site" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
 check "same-site subdomain cannot request the ROM" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' "$rom")"
@@ -257,10 +263,12 @@ else
 fi
 wp post update "$GAME" --post_password=rom-test --quiet
 check "password-protected ROM without the password" 403 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+check "player is told the game needs its password" password "$(reason -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
 check "password-protected download" 403 "$(status "$BASE/games/pixel-quest/download/")"
 wp post update "$GAME" --post_password= --quiet
 wp post update "$GAME" --post_status=private --quiet
 check "unpublished ROM cannot be read by a guest" 404 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
+check "player is told the file is not available" missing "$(reason -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
 wp post update "$GAME" --post_status=publish --quiet
 wp option patch update retrovault_settings downloads 0 --format=json --quiet
 check "globally disabled downloads" 403 "$(status "$BASE/games/pixel-quest/download/")"
@@ -348,6 +356,22 @@ if [ -n "$export_url" ] && curl -s -b "$TMP/admin.jar" -D "$TMP/headers" -o "$TM
 else
 	fail "CSV export did not return a CSV file"
 fi
+
+echo "== Site Health"
+# الموقع يطلب ملف لعبة من نفسه كما يفعل المشغّل. في الاستضافة يصل الخادم إلى نفسه بعنوانه العام؛ هنا نجعل
+# Apache يستمع أيضاً على منفذ العنوان، ونشغّل wp-cli داخل شبكة حاوية الموقع.
+docker exec "$WP" sh -c "grep -q 'Listen ${PORT}' /etc/apache2/ports.conf || echo 'Listen ${PORT}' >> /etc/apache2/ports.conf; sed -i 's/<VirtualHost \*:80>/<VirtualHost *:80 *:${PORT}>/' /etc/apache2/sites-enabled/000-default.conf; apache2ctl -k graceful" > /dev/null 2>&1
+sleep 2
+health() {
+	docker run --rm -i --network "container:$WP" --volumes-from "$WP" --user 33:33 -e HOME=/tmp \
+		-e WORDPRESS_DB_HOST="$DB" -e WORDPRESS_DB_USER=wp -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
+		"$REGISTRY/wordpress:cli" wp eval '$r = RetroVault\Roms::site_health_roms(); echo $r["status"];'
+}
+check "Site Health: game files reach the player" good "$(health)"
+docker exec "$WP" sh -c 'cp .htaccess /tmp/htaccess.bak && { printf "RewriteEngine On\nRewriteRule ^games/[^/]+/rom/ - [R=404,L]\n"; cat /tmp/htaccess.bak; } > .htaccess'
+check "Site Health: a server rule that hides game files from WordPress" critical "$(health)"
+docker exec "$WP" sh -c 'cp /tmp/htaccess.bak .htaccess'
+check "Site Health: restored" good "$(health)"
 
 echo "== Regression tests"
 docker cp .github/scripts/regression.php "$WP:/var/www/html/wp-content/regression.php"

@@ -29,11 +29,15 @@ final class Player {
 	}
 
 	public static function route() {
-		if ( ! is_singular( Post_Types::GAME ) ) {
-			return;
-		}
 		global $wp_query;
 		$vars = (array) $wp_query->query;
+		if ( ! is_singular( Post_Types::GAME ) ) {
+			// ملف لعبة لم تعد منشورة أو حُذفت: 404 بسبب يفهمه المشغّل بدل صفحة 404 من القالب.
+			if ( is_404() && array_key_exists( 'rv_rom', $vars ) ) {
+				Roms::not_found();
+			}
+			return;
+		}
 		if ( array_intersect( array( 'rv_rom', 'rv_play', 'rv_download' ), array_keys( $vars ) ) && ! in_array( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '', array( 'GET', 'HEAD' ), true ) ) {
 			header( 'Allow: GET, HEAD' );
 			nocache_headers();
@@ -121,6 +125,143 @@ final class Player {
 		return $strings ? $strings : null;
 	}
 
+	/** لون الموقع (زر «أعد المحاولة»)، مثل لون المحاكي. */
+	private static function accent() {
+		$color = sanitize_hex_color( (string) Settings::get( 'accent' ) );
+		return $color ? $color : '#D63A3A';
+	}
+
+	/** نص أبيض على اللون الداكن، وداكن على الفاتح (المدير يختار لون الموقع). */
+	private static function accent_text() {
+		$hex = ltrim( self::accent(), '#' );
+		if ( 3 === strlen( $hex ) ) {
+			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+		}
+		$lum = 0;
+		foreach ( array( 0.2126, 0.7152, 0.0722 ) as $i => $weight ) {
+			$c    = hexdec( substr( $hex, $i * 2, 2 ) ) / 255;
+			$lum += $weight * ( $c <= 0.03928 ? $c / 12.92 : pow( ( $c + 0.055 ) / 1.055, 2.4 ) );
+		}
+		// التباين مع الأبيض أقل من 4.5 عندما تتجاوز الإضاءة 0.183 تقريباً.
+		return $lum > 0.183 ? '#111' : '#fff';
+	}
+
+	/**
+	 * EmulatorJS مصمَّم لاتجاه LTR فقط. في صفحة RTL ينعكس شريطه فيصير زر الإعدادات يساره، وقائمته
+	 * (وقائمة الأقراص) تُفتح نحو اليسار كالعادة فتخرج من الشاشة. هنا نعكس ما يُحدَّد بـ left/right.
+	 */
+	private static function rtl_css() {
+		return <<<'CSS'
+[dir=rtl] .ejs_big_screen .ejs_settings_parent{right:auto;left:-3px}
+[dir=rtl] .ejs_big_screen .ejs_settings_parent::before,[dir=rtl] .ejs_big_screen .ejs_settings_parent::after{right:auto;left:15px}
+[dir=rtl] .ejs_settings_parent{text-align:right}
+[dir=rtl] .ejs_settings_main_bar{padding-right:11px;padding-left:28px}
+[dir=rtl] .ejs_settings_main_bar::after{right:auto;left:5px;border-left-color:transparent;border-right-color:rgba(79,91,95,.8)}
+[dir=rtl] .ejs_settings_main_bar:hover::after{border-left-color:transparent;border-right-color:currentColor}
+[dir=rtl] .ejs_settings_main_bar_selected{margin-left:-5px;margin-right:auto;padding-left:0;padding-right:25px}
+[dir=rtl] .ejs_back_button::after{left:auto;right:7px;border-right-color:transparent;border-left-color:rgba(79,91,95,.8)}
+[dir=rtl] .ejs_back_button:hover::after{border-right-color:transparent;border-left-color:currentColor}
+[dir=rtl] .ejs_option_row::before{margin-right:0;margin-left:10px}
+[dir=rtl] .ejs_option_row::after{left:auto;right:12px}
+[dir=rtl] .ejs_big_screen .ejs_menu_text{left:auto;right:0;transform-origin:100% 100%}
+[dir=rtl] .ejs_big_screen .ejs_menu_text::before{left:auto;right:16px;transform:translateX(50%)}
+[dir=rtl] .ejs_big_screen .ejs_menu_text_right{left:0!important;right:auto;transform-origin:0 100%}
+[dir=rtl] .ejs_big_screen .ejs_menu_text_right::before{left:16px!important;right:auto;transform:translateX(-50%)!important}
+[dir=rtl] .ejs_volume_parent{padding-right:0;padding-left:15px}
+[dir=rtl] .ejs_volume_parent input[type=range]{direction:ltr}
+[dir=rtl] .ejs_small_screen .ejs_menu_button svg{float:right}
+[dir=rtl] .ejs_message{text-align:right}
+[dir=rtl] .ejs_popup_container [style*="float: left"],[dir=rtl] .ejs_popup_container [style*="float:left"]{float:right!important}
+[dir=rtl] .ejs_popup_container [style*="float: right"],[dir=rtl] .ejs_popup_container [style*="float:right"]{float:left!important}
+
+CSS;
+	}
+
+	/**
+	 * نصوص assets/emulator-ui.js: سبب فشل تنزيل ملف اللعبة بدل «تحقق من اتصالك» العامة.
+	 * التفاصيل التقنية (وروابط الإصلاح) لمن يحرّر اللعبة فقط.
+	 *
+	 * @param array $game بيانات اللعبة.
+	 * @return array
+	 */
+	public static function ui_config( $game ) {
+		$config = array(
+			'protected' => ! empty( $game['rom']['protected'] ),
+			'i18n'      => array(
+				'retry'    => __( 'أعد المحاولة', 'retrovault-core' ),
+				'renewing' => __( 'جارٍ تجديد رابط اللعبة…', 'retrovault-core' ),
+				'failed'   => __( 'تعذّر تشغيل اللعبة', 'retrovault-core' ),
+				'download' => __( 'تعذّر تنزيل اللعبة', 'retrovault-core' ),
+				'offline'  => __( 'لا يوجد اتصال بالإنترنت. تحقق من اتصالك ثم أعد المحاولة.', 'retrovault-core' ),
+				'network'  => __( 'انقطع الاتصال قبل اكتمال تنزيل ملف اللعبة. أعد المحاولة.', 'retrovault-core' ),
+				'cors'     => __( 'ملف اللعبة على موقع آخر لا يسمح بتشغيله من هنا.', 'retrovault-core' ),
+				'mixed'    => __( 'رابط ملف اللعبة غير آمن (http) فمنعه المتصفح.', 'retrovault-core' ),
+				'session'  => __( 'المتصفح لم يحتفظ بملف تعريف الارتباط اللازم لتشغيل اللعبة. اسمح بملفات تعريف الارتباط لهذا الموقع ثم أعد المحاولة.', 'retrovault-core' ),
+				'token'    => __( 'انتهت صلاحية رابط ملف اللعبة. أعد المحاولة.', 'retrovault-core' ),
+				'origin'   => __( 'رُفض طلب ملف اللعبة لأنه لم يأتِ من المشغّل.', 'retrovault-core' ),
+				'missing'  => __( 'ملف اللعبة غير موجود على الخادم.', 'retrovault-core' ),
+				'password' => __( 'هذه اللعبة محمية بكلمة مرور. افتح صفحتها وأدخل كلمة المرور أولاً.', 'retrovault-core' ),
+				/* translators: %s: HTTP status code */
+				'blocked'  => __( 'تعذّر الوصول إلى ملف اللعبة (خطأ %s).', 'retrovault-core' ),
+				/* translators: %s: HTTP status code */
+				'server'   => __( 'حدث خطأ في الخادم أثناء إرسال ملف اللعبة (خطأ %s). أعد المحاولة بعد قليل.', 'retrovault-core' ),
+				/* translators: %s: HTTP status code */
+				'link'     => __( 'رابط ملف اللعبة لا يعمل (خطأ %s).', 'retrovault-core' ),
+				'bios'     => __( 'تعذّر تنزيل ملف BIOS الذي يحتاجه نظام هذه اللعبة.', 'retrovault-core' ),
+			),
+		);
+		if ( ! current_user_can( 'edit_post', $game['id'] ) ) {
+			return $config;
+		}
+		$system = $game['system'] ? get_edit_term_link( (int) $game['system']['term_id'], Post_Types::SYSTEM ) : '';
+		$config['admin'] = array(
+			'label'       => __( 'لمدير الموقع:', 'retrovault-core' ),
+			'noResponse'  => __( 'لا رد', 'retrovault-core' ),
+			'home'        => home_url( '/' ),
+			'cookie'      => Roms::cookie_name(),
+			'edit'        => (string) get_edit_post_link( $game['id'], 'raw' ),
+			'editLabel'   => __( 'تحرير اللعبة', 'retrovault-core' ),
+			'system'      => (string) $system,
+			'systemLabel' => __( 'تحرير النظام', 'retrovault-core' ),
+			'help'        => current_user_can( 'view_site_health_checks' ) ? admin_url( 'site-health.php' ) : '',
+			'helpLabel'   => __( 'فحص الموقع', 'retrovault-core' ),
+			'hints'       => array(
+				'offline'  => __( 'الجهاز غير متصل بالإنترنت.', 'retrovault-core' ),
+				'network'  => __( 'الخادم لم يُكمل إرسال الملف. إن تكرر هذا مع الألعاب الكبيرة فقد تقطع مهلة الخادم أو جدار الحماية التنزيل؛ جرّب الملف مضغوطاً (zip) أو اطلب من الاستضافة رفع المهلة.', 'retrovault-core' ),
+				/* translators: %s: host name */
+				'cors'     => __( 'الملف على نطاق آخر (%s) لا يرسل الترويسة Access-Control-Allow-Origin، أو الرابط صفحة مشاركة وليس الملف نفسه (Google Drive مثلاً). ارفع الملف إلى مكتبة الوسائط من صفحة تحرير اللعبة بدل الرابط المباشر.', 'retrovault-core' ),
+				'mixed'    => __( 'الموقع يعمل بـ https والرابط المباشر للملف يبدأ بـ http://، والمتصفح يمنع ذلك. استخدم رابط https أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ),
+				/* translators: %s: cookie name */
+				'session'  => __( 'طلب الملف وصل بلا ملف تعريف الارتباط %s الذي تضعه صفحة المشغّل. إن كانت الاستضافة أو CDN (Varnish مثلاً) تحذف ملفات تعريف الارتباط غير المعروفة، فاطلب منها السماح به.', 'retrovault-core' ),
+				'token'    => __( 'رمز رابط الملف لا يطابق جلسة المتصفح حتى بعد تجديد الصفحة، وغالباً السبب أن صفحة المشغّل محفوظة في ذاكرة تخزين مؤقت. استثنِ هذه الروابط من إضافة التخزين المؤقت أو CDN:', 'retrovault-core' ),
+				/* translators: %s: site address */
+				'origin'   => __( 'الطلب لم يحمل ترويسات Sec-Fetch ولا Referer يطابق عنوان الموقع (%s). تأكد أن «عنوان الموقع» في الإعدادات ← عام هو نفسه الذي يظهر في المتصفح (https و www).', 'retrovault-core' ),
+				'missing'  => __( 'الملف المرفوع لهذه اللعبة غير موجود أو لا يمكن قراءته في مجلد uploads/retrovault-roms. أعد رفعه من صفحة تحرير اللعبة.', 'retrovault-core' ),
+				'password' => __( 'اللعبة محمية بكلمة مرور.', 'retrovault-core' ),
+				'blocked'  => __( 'الطلب لم يصل إلى ووردبريس أصلاً: رفضه الخادم أو جدار حماية قبل ذلك. في nginx يجب أن تُحيل قاعدة الملفات الثابتة الطلب إلى index.php إن لم يكن الملف موجوداً، هكذا:', 'retrovault-core' ),
+				'server'   => __( 'راجع سجل أخطاء PHP في الاستضافة؛ الملفات الكبيرة قد تتجاوز حدود الذاكرة أو المهلة.', 'retrovault-core' ),
+				'link'     => __( 'الرابط المحفوظ لملف اللعبة يعيد هذا الخطأ. تحقق منه في صفحة تحرير اللعبة، أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ),
+				/* translators: %s: host name */
+				'bios'     => __( 'رابط BIOS في إعدادات النظام (%s) لا يعمل أو على موقع لا يسمح بالتنزيل من موقعك. عدّله من الألعاب ← الأنظمة، أو ارفع الملف إلى مكتبة الوسائط.', 'retrovault-core' ),
+			),
+		);
+		// أسطر تُعرض كما هي (من اليسار لليمين): قاعدة nginx، ومسارات صفحة المشغّل وملف اللعبة في هذا الموقع.
+		global $wp_rewrite;
+		$slug  = (string) get_post_field( 'post_name', $game['id'] );
+		$paths = array( '?rv_play=', '?rv_rom=' );
+		if ( $wp_rewrite && $wp_rewrite->using_permalinks() && '' !== $slug ) {
+			$paths = array();
+			foreach ( array( 'play' => '', 'rom' => '*' ) as $endpoint => $suffix ) {
+				$paths[] = str_replace( '/' . $slug . '/', '/*/', (string) wp_make_link_relative( Games::endpoint_url( $game['id'], $endpoint ) ) ) . $suffix;
+			}
+		}
+		$config['admin']['code'] = array(
+			'blocked' => 'try_files $uri $uri/ /index.php?$args;',
+			'token'   => implode( "\n", $paths ),
+		);
+		return $config;
+	}
+
 	/**
 	 * @param \WP_Post $post اللعبة.
 	 */
@@ -161,6 +302,21 @@ html,body{margin:0;height:100%;background:#000;color:#eee;overflow:hidden;font-f
 #rv-game{position:fixed;inset:0;width:100%;height:100%;touch-action:none}
 .rv-msg{position:fixed;inset:0;display:grid;place-content:center;gap:12px;text-align:center;padding:24px;line-height:1.7}
 .rv-msg a{color:#fff}
+.rv-error{position:absolute;inset:0;z-index:10000;margin:auto;width:min(92%,440px);height:fit-content;max-height:92%;overflow:auto;box-sizing:border-box;display:grid;gap:10px;justify-items:center;padding:18px 16px;border-radius:12px;background:rgba(12,12,14,.94);box-shadow:0 8px 30px rgba(0,0,0,.6);color:#ddd;font:14px/1.7 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;text-align:center}
+.rv-error p{margin:0}
+.rv-error__title{color:#fff;font-weight:700;font-size:16px}
+.rv-error__retry{font:inherit;font-weight:700;color:<?php echo esc_html( self::accent_text() ); ?>;background:<?php echo esc_html( self::accent() ); ?>;border:0;border-radius:999px;padding:7px 24px;cursor:pointer}
+.rv-error__retry:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.rv-error__admin{justify-self:stretch;display:grid;gap:6px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,.07);color:#bbb;font-size:13px;text-align:start}
+.rv-error__admin strong{color:#fff}
+.rv-error__admin code{display:block;font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;text-align:left;color:#9ad}
+.rv-error__links{display:flex;flex-wrap:wrap;gap:4px 14px}
+.rv-error__links a{color:#fff}
+			<?php
+			if ( 'rtl' === $dir ) {
+				echo self::rtl_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSS ثابت.
+			}
+			?>
 </style>
 </head>
 <body>
@@ -205,7 +361,7 @@ window.EJS_ready = function () {
 	emu.rvReady = true;
 	/* EmulatorJS 4.2 عند فشل تنزيل اللعبة (انقطاع الاتصال مثلاً) يسأل النواة عن خياراتها قبل أن تعمل، ثم
 	 * يكمل تشغيل اللعبة بلا ملف؛ كلاهما يُنهي تبويب المتصفح كله. نُبقي رسالة الخطأ ظاهرة بدل ذلك،
-	 * وزر «إعادة التشغيل» في صفحة اللعبة يعيد المحاولة. */
+	 * وemulator-ui.js يشرح سببها ويعرض زر «أعد المحاولة». */
 	var startGameError = emu.startGameError;
 	emu.startGameError = function () {
 		if (this.gameManager && !this.started) {
@@ -231,6 +387,7 @@ window.EJS_ready = function () {
 			}
 		}, 1500);
 	});
+	if (window.RVEmulatorUI) { window.RVEmulatorUI.attach(emu); }
 };
 window.EJS_onGameStart = function () {
 	var d = <?php echo wp_json_encode( $ping, $flags ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
@@ -240,6 +397,7 @@ window.EJS_onGameStart = function () {
 	if (typeof window.RV_markOffline === 'function') { window.RV_markOffline(); }
 };
 			<?php
+			echo 'window.RVPlayerUI = ' . wp_json_encode( self::ui_config( $game ), $flags ) . ";\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON آمن مع JSON_HEX_TAG.
 			echo 'window.RVPWA = ' . wp_json_encode( Pwa::client_config(), $flags ) . ';';
 				echo Pwa::player_script( $game ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON مُرمَّز.
 			?>
@@ -250,6 +408,7 @@ window.EJS_onGameStart = function () {
 			}
 			?>
 </script>
+<script src="<?php echo esc_url( RETROVAULT_URL . 'assets/emulator-ui.js?ver=' . RETROVAULT_VERSION ); ?>"></script>
 <script src="<?php echo esc_url( RETROVAULT_URL . 'assets/pwa.js?ver=' . RETROVAULT_VERSION ); ?>"></script>
 			<?php if ( is_user_logged_in() && Saves::enabled() ) : ?>
 <script src="<?php echo esc_url( RETROVAULT_URL . 'assets/cloud-saves.js?ver=' . RETROVAULT_VERSION ); ?>"></script>
