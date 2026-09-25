@@ -3,6 +3,59 @@
 (function () {
 	'use strict';
 
+	/* على الجوال تملأ شاشة اللعب الجهاز كله (iPhone لا يدعم ملء الشاشة لغير الفيديو). زر الإغلاق أو
+	 * زر الرجوع في المتصفح يعيدانك للصفحة، واللعبة تبقى تعمل فيها. */
+	var immersiveQuery = window.matchMedia ? window.matchMedia('(pointer: coarse) and (max-width: 900px), (pointer: coarse) and (max-height: 500px)') : null;
+
+	function setImmersive(root, on, fromHistory) {
+		var exit = root.querySelector('[data-rv-action="exit-immersive"]');
+		if (on) {
+			if (!immersiveQuery || !immersiveQuery.matches || root.classList.contains('is-immersive')) {
+				return;
+			}
+			root.classList.add('is-immersive');
+			document.documentElement.classList.add('rv-immersive');
+			if (exit) {
+				exit.hidden = false;
+			}
+			try { window.history.pushState({ rvImmersive: true }, ''); } catch (e) { /* تجاهل */ }
+			return;
+		}
+		if (!root.classList.contains('is-immersive')) {
+			return;
+		}
+		root.classList.remove('is-immersive');
+		document.documentElement.classList.remove('rv-immersive');
+		if (exit) {
+			exit.hidden = true;
+		}
+		if (!fromHistory && window.history.state && window.history.state.rvImmersive) {
+			window.history.back();
+		}
+		root.scrollIntoView({ block: 'center' });
+	}
+
+	/* «إنهاء اللعب»: شاشة البداية كما كانت قبل الضغط على «ابدأ اللعب» */
+	function stop(root) {
+		if (!root || !root.classList.contains('is-running')) {
+			return;
+		}
+		setImmersive(root, false);
+		var screen = root.querySelector('.rv-player__screen');
+		screen.textContent = '';
+		(root.rvIdle || []).forEach(function (node) { screen.appendChild(node); });
+		root.classList.remove('is-running');
+		var reload = root.querySelector('[data-rv-action="reload"]');
+		if (reload) {
+			reload.hidden = true;
+		}
+		var startBtn = screen.querySelector('[data-rv-start]');
+		if (startBtn) {
+			startBtn.focus();
+		}
+		root.dispatchEvent(new CustomEvent('rv:player-stop', { bubbles: true }));
+	}
+
 	function start(root, resume) {
 		if (!root || root.classList.contains('is-running')) {
 			return;
@@ -20,9 +73,11 @@
 		frame.setAttribute('allow', 'fullscreen; gamepad; autoplay');
 		frame.setAttribute('allowfullscreen', '');
 
+		root.rvIdle = Array.prototype.slice.call(screen.childNodes);
 		screen.textContent = '';
 		screen.appendChild(frame);
 		root.classList.add('is-running');
+		setImmersive(root, true);
 
 		var reload = root.querySelector('[data-rv-action="reload"]');
 		if (reload) {
@@ -39,6 +94,15 @@
 	}
 
 	function toggleFullscreen(root) {
+		/* على الجوال «ملء الشاشة» هو وضع اللعب الكامل نفسه (ويعمل على iPhone أيضاً) */
+		if (immersiveQuery && immersiveQuery.matches) {
+			if (!root.classList.contains('is-running')) {
+				start(root);
+			} else {
+				setImmersive(root, !root.classList.contains('is-immersive'));
+			}
+			return;
+		}
 		var target = root.querySelector('.rv-player__screen');
 		if (document.fullscreenElement || document.webkitFullscreenElement) {
 			(document.exitFullscreen || document.webkitExitFullscreen).call(document);
@@ -90,7 +154,16 @@
 					frame.src = frame.src;
 				}
 				break;
+			case 'exit-immersive':
+				setImmersive(root, false);
+				break;
 		}
+	});
+
+	window.addEventListener('popstate', function () {
+		document.querySelectorAll('[data-rv-player].is-immersive').forEach(function (root) {
+			setImmersive(root, false, true);
+		});
 	});
 
 	document.addEventListener('keydown', function (e) {
@@ -99,7 +172,7 @@
 		}
 	});
 
-	if (!canFullscreen()) {
+	if (!canFullscreen() && !(immersiveQuery && immersiveQuery.matches)) {
 		document.querySelectorAll('[data-rv-action="fullscreen"]').forEach(function (b) {
 			b.hidden = true;
 		});
@@ -133,6 +206,13 @@
 		}
 		if (e.data.type === 'rv:game-start') {
 			document.dispatchEvent(new CustomEvent('rv:game-start', { detail: e.data }));
+		} else if (e.data.type === 'rv:exit') {
+			document.querySelectorAll('[data-rv-player].is-running').forEach(function (root) {
+				var frame = root.querySelector('iframe');
+				if (frame && frame.contentWindow === e.source) {
+					stop(root);
+				}
+			});
 		} else if (e.data.type === 'rv:saved') {
 			document.dispatchEvent(new CustomEvent('rv:game-saved', { detail: e.data }));
 		}

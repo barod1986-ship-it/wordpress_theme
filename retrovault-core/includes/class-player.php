@@ -105,6 +105,23 @@ final class Player {
 	}
 
 	/**
+	 * ترجمة واجهة EmulatorJS المرفقة مع الإضافة (languages/emulatorjs-{لغة}.json). ترجمته العربية آلية
+	 * وفيها أخطاء كثيرة («Load State» ← «الدولة الحمل»). ما لا يوجد في الملف يظهر كما في المحاكي.
+	 *
+	 * @param string $language رمز لغة EmulatorJS مثل ar-AR.
+	 * @return array|null
+	 */
+	public static function emulator_strings( $language ) {
+		if ( ! preg_match( '/^[a-z]{2,3}-[A-Z]{2,3}$/', (string) $language ) ) {
+			return null;
+		}
+		$file    = RETROVAULT_PATH . 'languages/emulatorjs-' . $language . '.json';
+		$strings = is_readable( $file ) ? json_decode( (string) file_get_contents( $file ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- ملف محلي.
+		$strings = (array) apply_filters( 'retrovault_emulator_strings', is_array( $strings ) ? $strings : array(), $language );
+		return $strings ? $strings : null;
+	}
+
+	/**
 	 * @param \WP_Post $post اللعبة.
 	 */
 	private static function render( $post ) {
@@ -141,7 +158,7 @@ final class Player {
 <title><?php echo esc_html( $game['title'] . ' — ' . get_bloginfo( 'name' ) ); ?></title>
 <style>
 html,body{margin:0;height:100%;background:#000;color:#eee;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
-#rv-game{position:fixed;inset:0;width:100%;height:100%}
+#rv-game{position:fixed;inset:0;width:100%;height:100%;touch-action:none}
 .rv-msg{position:fixed;inset:0;display:grid;place-content:center;gap:12px;text-align:center;padding:24px;line-height:1.7}
 .rv-msg a{color:#fff}
 </style>
@@ -157,14 +174,64 @@ html,body{margin:0;height:100%;background:#000;color:#eee;overflow:hidden;font-f
 <noscript><div class="rv-msg"><?php esc_html_e( 'تشغيل الألعاب يحتاج تفعيل JavaScript في المتصفح.', 'retrovault-core' ); ?></div></noscript>
 <script>
 			<?php
-			foreach ( self::config( $game, $autostart ) as $name => $value ) {
+			$config = self::config( $game, $autostart );
+			foreach ( $config as $name => $value ) {
 				echo 'window.' . preg_replace( '/[^A-Za-z0-9_]/', '', $name ) . ' = ' . wp_json_encode( $value, $flags ) . ";\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON آمن مع JSON_HEX_TAG.
 			}
+			$language = isset( $config['EJS_language'] ) ? (string) $config['EJS_language'] : '';
+			$strings  = self::emulator_strings( $language );
+			if ( $strings ) {
+				// المحاكي يطلب ملف لغته من EJS_paths؛ نعطيه الترجمة من الصفحة نفسها فتعمل بدون إنترنت أيضاً.
+				printf(
+					"window.EJS_paths = window.EJS_paths || {};\nif (!window.EJS_paths[%1\$s]) { window.EJS_paths[%1\$s] = URL.createObjectURL(new Blob([JSON.stringify(%2\$s)], { type: 'application/json' })); }\n",
+					wp_json_encode( $language ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+					wp_json_encode( $strings, $flags ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				);
+			}
 			$ping = array(
-				'id'  => $game['id'],
-				'url' => rest_url( 'retrovault/v1/games/' . $game['id'] . '/play' ),
+				'id'   => $game['id'],
+				'url'  => rest_url( 'retrovault/v1/games/' . $game['id'] . '/play' ),
+				'page' => $game['url'],
 			);
 			?>
+/* المحاكي يطلق «exit» أيضاً عند مغادرة الصفحة؛ هذا ليس طلب إنهاء من اللاعب */
+window.rvUnloading = false;
+window.addEventListener('beforeunload', function () { window.rvUnloading = true; });
+window.addEventListener('pagehide', function () { window.rvUnloading = true; });
+window.EJS_ready = function () {
+	var emu = window.EJS_emulator;
+	var d = <?php echo wp_json_encode( $ping, $flags ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+	if (!emu || emu.rvReady) { return; }
+	emu.rvReady = true;
+	/* EmulatorJS 4.2 عند فشل تنزيل اللعبة (انقطاع الاتصال مثلاً) يسأل النواة عن خياراتها قبل أن تعمل، ثم
+	 * يكمل تشغيل اللعبة بلا ملف؛ كلاهما يُنهي تبويب المتصفح كله. نُبقي رسالة الخطأ ظاهرة بدل ذلك،
+	 * وزر «إعادة التشغيل» في صفحة اللعبة يعيد المحاولة. */
+	var startGameError = emu.startGameError;
+	emu.startGameError = function () {
+		if (this.gameManager && !this.started) {
+			this.gameManager.getCoreOptions = function () { return ''; };
+		}
+		return startGameError.apply(this, arguments);
+	};
+	var startGame = emu.startGame;
+	emu.startGame = function () {
+		if (this.failedToStart) { return; }
+		return startGame.apply(this, arguments);
+	};
+	/* «إنهاء اللعب» من قائمة المحاكي: العودة لشاشة البداية في صفحة اللعبة (أو إليها في النافذة المستقلة).
+	 * بعد ثانية ونصف: المحاكي يحفظ اللعبة ويُغلق نواته خلال ثانية من الإنهاء. */
+	emu.on('exit', function () {
+		if (!emu.started || emu.failedToStart || window.rvUnloading) { return; }
+		setTimeout(function () {
+			emu.started = false; // وإلا أطلق المحاكي «exit» ثانية عند مغادرة الصفحة وحاول إغلاق ما أغلقه
+			if (window.parent !== window) {
+				try { window.parent.postMessage({ type: 'rv:exit', id: d.id }, window.location.origin); } catch (e) {}
+			} else {
+				window.location.href = d.page;
+			}
+		}, 1500);
+	});
+};
 window.EJS_onGameStart = function () {
 	var d = <?php echo wp_json_encode( $ping, $flags ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
 	try { fetch(d.url, { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(function () {}); } catch (e) {}
@@ -325,6 +392,8 @@ window.RVCloud = <?php echo wp_json_encode( $cfg, $flags ); // phpcs:ignore Word
 				<?php endif; ?>
 				<noscript><a class="rv-player__nojs" href="<?php echo esc_url( $game['player_url'] ); ?>"><?php esc_html_e( 'افتح المشغّل', 'retrovault-core' ); ?></a></noscript>
 			</div>
+			<?php $close = self::icon( 'close' ); ?>
+			<button type="button" class="rv-player__exit" data-rv-action="exit-immersive" aria-label="<?php esc_attr_e( 'العودة إلى صفحة اللعبة', 'retrovault-core' ); ?>" hidden><?php echo '' !== $close ? $close : '<span aria-hidden="true">&times;</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></button>
 			<div class="rv-player__bar">
 				<button type="button" class="rv-player__btn" data-rv-action="fullscreen"><?php echo self::icon( 'fullscreen' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span><?php esc_html_e( 'ملء الشاشة', 'retrovault-core' ); ?></span></button>
 				<button type="button" class="rv-player__btn" data-rv-action="theater" aria-pressed="false"><?php echo self::icon( 'theater' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span><?php esc_html_e( 'وضع العرض الواسع', 'retrovault-core' ); ?></span></button>

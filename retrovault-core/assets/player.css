@@ -17,3 +17,7 @@
 .rv-player__screen:fullscreen { width: 100%; height: 100%; border-radius: 0; }
 body.rv-theater .rv-player__screen { width: min(100%, calc(88vh * var(--rv-ratio))); }
 @media (max-width: 640px) { .rv-player__screen { aspect-ratio: auto; height: min(78vh, 560px); width: 100%; } }
+html.rv-immersive, html.rv-immersive body { overflow: hidden; overscroll-behavior: none; }
+.rv-player.is-immersive .rv-player__screen { position: fixed; inset: 0; z-index: 100000; width: 100%; height: 100vh; height: 100dvh; aspect-ratio: auto; margin: 0; border-radius: 0; }
+.rv-player__exit { position: fixed; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); z-index: 100001; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(12, 12, 16, .6); color: #fff; font-size: 1.4rem; cursor: pointer; }
+.rv-player__exit[hidden] { display: none; }
