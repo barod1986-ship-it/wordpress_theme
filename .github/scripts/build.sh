@@ -9,6 +9,8 @@ zip -rqX dist/retrovault-core.zip retrovault-core -x '*.DS_Store' '*Thumbs.db' '
 zip -rqX dist/retrovault-theme.zip retrovault -x '*.DS_Store' '*Thumbs.db' '*.log'
 unzip -tq dist/retrovault-core.zip
 unzip -tq dist/retrovault-theme.zip
-unzip -l dist/retrovault-core.zip | grep -q ' retrovault-core/retrovault-core.php$'
-unzip -l dist/retrovault-theme.zip | grep -q ' retrovault/style.css$'
+# بلا أنبوب إلى grep -q: يتوقف grep عند أول تطابق فيُقتل unzip وهو يكتب (SIGPIPE)، ومع pipefail
+# كان البناء يفشل أحياناً. unzip نفسه يُرجع خطأً إن لم يجد المسار بالضبط في جذر الملف.
+unzip -l dist/retrovault-core.zip retrovault-core/retrovault-core.php > /dev/null
+unzip -l dist/retrovault-theme.zip retrovault/style.css > /dev/null
 ls -l dist
