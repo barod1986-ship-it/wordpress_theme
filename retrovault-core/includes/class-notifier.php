@@ -213,7 +213,20 @@ final class Notifier {
 	 * @param array    $job  بيانات المهمة.
 	 */
 	private static function mail( $user, $job ) {
-		$site = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+		$msg = array(
+			'site'    => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+			'heading' => '',
+			'intro'   => '',
+			'label'   => '',
+			'items'   => array(),
+			'more'    => '',
+			'text'    => '',
+			'cta'     => '',
+			'url'     => '',
+			'image'   => '',
+			'wide'    => false,
+			'unsub'   => self::unsubscribe_url( $user->ID ),
+		);
 
 		if ( 'version' === $job['type'] ) {
 			$game = Games::get( (int) $job['games'][0] );
@@ -222,16 +235,22 @@ final class Notifier {
 			}
 			/* translators: 1: game, 2: version */
 			$subject = sprintf( __( 'تحديث جديد لـ %1$s: الإصدار %2$s', 'retrovault-core' ), $game['title'], $job['version'] );
-			$heading = $game['title'];
-			/* translators: 1: version, 2: game */
-			$intro   = sprintf( __( 'نزل الإصدار %1$s من «%2$s»، وهي في مفضلتك.', 'retrovault-core' ), $job['version'], $game['title'] );
-			// أول أربعة أسطر من سجل التحديثات، كل سطر كما كتبته. (/u ضروري: بدونه يُقطع النص العربي داخل الحرف «م».)
-			$lines   = array_filter( array_map( 'trim', (array) preg_split( '/\R/u', wp_strip_all_tags( $game['changelog'] ) ) ) );
-			$details = implode( "\n", array_map( static function ( $line ) { return wp_html_excerpt( $line, 140, '…' ); }, array_slice( $lines, 0, 4 ) ) );
-			$label   = __( 'ما الجديد', 'retrovault-core' );
-			$cta     = __( 'العب الآن', 'retrovault-core' );
-			$url     = $game['url'];
-			$image   = $game['cover_id'] ? (string) wp_get_attachment_image_url( $game['cover_id'], 'medium' ) : '';
+			// أحدث قسم في سجل التحديثات، نقاطاً بلا علامات «-» التي كتبها صاحب اللعبة.
+			$log = Games::changelog_items( $game['changelog'], 5 );
+			$msg = array_merge(
+				$msg,
+				array(
+					'heading' => $game['title'],
+					/* translators: 1: version, 2: game */
+					'intro'   => sprintf( __( 'نزل الإصدار %1$s من «%2$s»، وهي في مفضلتك.', 'retrovault-core' ), $job['version'], $game['title'] ),
+					'label'   => __( 'ما الجديد', 'retrovault-core' ),
+					'items'   => $log['items'],
+					'more'    => $log['more'] ? __( 'والمزيد في سجل التحديثات بصفحة اللعبة.', 'retrovault-core' ) : '',
+					'cta'     => __( 'العب الآن', 'retrovault-core' ),
+					'url'     => $game['url'],
+					'image'   => $game['cover_id'] ? (string) wp_get_attachment_image_url( $game['cover_id'], 'medium' ) : '',
+				)
+			);
 		} else {
 			$post = get_post( (int) $job['ref'] );
 			if ( ! $post || 'publish' !== $post->post_status ) {
@@ -245,66 +264,137 @@ final class Notifier {
 			}
 			/* translators: %s: post title */
 			$subject = sprintf( __( 'من يوميات التطوير: %s', 'retrovault-core' ), get_the_title( $post ) );
-			$heading = get_the_title( $post );
-			/* translators: %s: game names */
-			$intro   = sprintf( __( 'تدوينة جديدة عن %s من ألعاب مفضلتك.', 'retrovault-core' ), implode( __( ' و', 'retrovault-core' ), $names ) );
-			$details = wp_strip_all_tags( get_the_excerpt( $post ) );
-			$label   = '';
-			$cta     = __( 'اقرأ التدوينة', 'retrovault-core' );
-			$url     = get_permalink( $post );
-			$image   = has_post_thumbnail( $post ) ? (string) get_the_post_thumbnail_url( $post, 'medium_large' ) : '';
+			$msg     = array_merge(
+				$msg,
+				array(
+					'heading' => get_the_title( $post ),
+					/* translators: %s: game names */
+					'intro'   => sprintf( __( 'تدوينة جديدة عن %s من ألعاب مفضلتك.', 'retrovault-core' ), implode( __( ' و', 'retrovault-core' ), $names ) ),
+					'text'    => wp_strip_all_tags( get_the_excerpt( $post ) ),
+					'cta'     => __( 'اقرأ التدوينة', 'retrovault-core' ),
+					'url'     => get_permalink( $post ),
+					// صورة التدوينة عريضة غالباً، فتُعرض بعرض الرسالة لا مصغّرة كغلاف اللعبة.
+					'image'   => has_post_thumbnail( $post ) ? (string) get_the_post_thumbnail_url( $post, 'medium_large' ) : '',
+					'wide'    => true,
+				)
+			);
 		}
 
-		$unsub   = self::unsubscribe_url( $user->ID );
-		$headers = array(
-			'Content-Type: text/html; charset=UTF-8',
-			'List-Unsubscribe: <' . $unsub . '>',
-			'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
-		);
-		$html    = self::template( $site, $heading, $intro, $label, $details, $cta, $url, $image, $unsub );
-
-		wp_mail( $user->user_email, $subject, $html, $headers );
+		self::send( $user->user_email, $subject, $msg );
 	}
 
 	/**
-	 * قالب رسالة بسيط بتنسيق مضمّن (تدعمه برامج البريد).
+	 * رسالة HTML مع نسخة نصية لبرامج البريد التي لا تعرض HTML (وتقلل تصنيفها رسائل مزعجة)،
+	 * واسم الموقع مرسلاً بدل «WordPress» ما لم تحدد إضافة بريد اسماً آخر.
 	 *
-	 * @param string $site    اسم الموقع.
-	 * @param string $heading العنوان.
-	 * @param string $intro   السطر الأول.
-	 * @param string $label   عنوان التفاصيل.
-	 * @param string $details التفاصيل.
-	 * @param string $cta     نص الزر.
-	 * @param string $url     رابط الزر.
-	 * @param string $image   صورة (اختيارية).
-	 * @param string $unsub   رابط الإيقاف.
+	 * @param string $to      البريد.
+	 * @param string $subject العنوان.
+	 * @param array  $msg     محتوى الرسالة.
 	 */
-	private static function template( $site, $heading, $intro, $label, $details, $cta, $url, $image, $unsub ) {
-		$dir = is_rtl() ? 'rtl' : 'ltr';
+	private static function send( $to, $subject, $msg ) {
+		$text = self::text( $msg );
+		$alt  = static function ( $mailer ) use ( $text ) {
+			$mailer->AltBody = $text; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- خاصية PHPMailer.
+		};
+		$from = static function ( $name ) use ( $msg ) {
+			return 'WordPress' === $name ? $msg['site'] : $name;
+		};
+		add_action( 'phpmailer_init', $alt );
+		add_filter( 'wp_mail_from_name', $from );
+		wp_mail(
+			$to,
+			$subject,
+			self::template( $msg ),
+			array(
+				'Content-Type: text/html; charset=UTF-8',
+				'List-Unsubscribe: <' . $msg['unsub'] . '>',
+				'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
+			)
+		);
+		remove_action( 'phpmailer_init', $alt );
+		remove_filter( 'wp_mail_from_name', $from );
+	}
+
+	/**
+	 * النسخة النصية من الرسالة.
+	 *
+	 * @param array $msg محتوى الرسالة.
+	 */
+	private static function text( $msg ) {
+		$lines = array( $msg['site'], '', $msg['heading'], $msg['intro'], '' );
+		if ( $msg['items'] ) {
+			if ( $msg['label'] ) {
+				$lines[] = $msg['label'] . ':';
+			}
+			foreach ( $msg['items'] as $item ) {
+				$lines[] = '• ' . $item;
+			}
+			if ( $msg['more'] ) {
+				$lines[] = $msg['more'];
+			}
+			$lines[] = '';
+		} elseif ( $msg['text'] ) {
+			$lines[] = $msg['text'];
+			$lines[] = '';
+		}
+		$lines[] = $msg['cta'] . ': ' . $msg['url'];
+		$lines[] = '';
+		$lines[] = '-- ';
+		$lines[] = __( 'وصلتك هذه الرسالة لأن اللعبة في مفضلتك.', 'retrovault-core' );
+		$lines[] = __( 'إيقاف رسائل التحديثات', 'retrovault-core' ) . ': ' . $msg['unsub'];
+		return html_entity_decode( implode( "\n", $lines ), ENT_QUOTES, 'UTF-8' );
+	}
+
+	/**
+	 * قالب الرسالة بتنسيق مضمّن (تدعمه برامج البريد).
+	 *
+	 * @param array $msg محتوى الرسالة.
+	 */
+	private static function template( $msg ) {
+		$rtl   = is_rtl();
+		$dir   = $rtl ? 'rtl' : 'ltr';
+		$align = $rtl ? 'right' : 'left';
 		ob_start();
 		?>
 <!doctype html>
 <html lang="<?php echo esc_attr( get_bloginfo( 'language' ) ); ?>" dir="<?php echo esc_attr( $dir ); ?>">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?php echo esc_html( $msg['heading'] ); ?></title>
+</head>
 <body style="margin:0;padding:0;background:#cfcdd4;color:#25232b;font-family:Tahoma,Arial,sans-serif;">
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#cfcdd4;"><?php echo esc_html( $msg['intro'] ); ?></div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#cfcdd4;"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#e3e1e7;border-radius:16px;border:1px solid #9b98a5;">
-<tr><td dir="<?php echo esc_attr( $dir ); ?>" style="padding:24px;text-align:<?php echo 'rtl' === $dir ? 'right' : 'left'; ?>;">
-<p style="margin:0 0 8px;font-size:13px;color:#4e4b57;"><?php echo esc_html( $site ); ?></p>
-		<?php if ( $image ) : ?>
-<img src="<?php echo esc_url( $image ); ?>" alt="" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:0 0 16px;border-radius:8px;border:3px solid #1e1d23;">
+<tr><td dir="<?php echo esc_attr( $dir ); ?>" style="padding:24px;text-align:<?php echo esc_attr( $align ); ?>;">
+<p style="margin:0 0 8px;font-size:13px;color:#4e4b57;"><?php echo esc_html( $msg['site'] ); ?></p>
+		<?php if ( $msg['image'] && $msg['wide'] ) : ?>
+<img src="<?php echo esc_url( $msg['image'] ); ?>" alt="" width="472" style="display:block;width:100%;max-width:472px;height:auto;margin:0 0 16px;border-radius:10px;">
+		<?php elseif ( $msg['image'] ) : ?>
+<img src="<?php echo esc_url( $msg['image'] ); ?>" alt="" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:0 0 16px;border-radius:8px;border:3px solid #1e1d23;">
 		<?php endif; ?>
-<h1 style="margin:0 0 10px;font-size:22px;line-height:1.4;"><?php echo esc_html( $heading ); ?></h1>
-<p style="margin:0 0 16px;font-size:16px;line-height:1.8;"><?php echo esc_html( $intro ); ?></p>
-		<?php if ( $details ) : ?>
-			<?php if ( $label ) : ?>
-<p style="margin:0 0 4px;font-size:13px;font-weight:bold;color:#4e4b57;"><?php echo esc_html( $label ); ?></p>
+<h1 style="margin:0 0 10px;font-size:22px;line-height:1.4;"><?php echo esc_html( $msg['heading'] ); ?></h1>
+<p style="margin:0 0 16px;font-size:16px;line-height:1.8;"><?php echo esc_html( $msg['intro'] ); ?></p>
+		<?php if ( $msg['items'] ) : ?>
+			<?php if ( $msg['label'] ) : ?>
+<p style="margin:0 0 4px;font-size:13px;font-weight:bold;color:#4e4b57;"><?php echo esc_html( $msg['label'] ); ?></p>
 			<?php endif; ?>
-<p style="margin:0 0 20px;padding:12px 14px;background:#bdbac5;border-radius:10px;font-size:15px;line-height:1.8;"><?php echo nl2br( esc_html( $details ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></p>
+<ul style="margin:0 0 <?php echo $msg['more'] ? '8' : '20'; ?>px;padding:12px 14px;padding-<?php echo esc_attr( $align ); ?>:34px;background:#bdbac5;border-radius:10px;font-size:15px;line-height:1.8;">
+			<?php foreach ( $msg['items'] as $item ) : ?>
+<li style="margin:0 0 2px;"><?php echo esc_html( $item ); ?></li>
+			<?php endforeach; ?>
+</ul>
+			<?php if ( $msg['more'] ) : ?>
+<p style="margin:0 0 20px;font-size:13px;color:#4e4b57;"><?php echo esc_html( $msg['more'] ); ?></p>
+			<?php endif; ?>
+		<?php elseif ( $msg['text'] ) : ?>
+<p style="margin:0 0 20px;padding:12px 14px;background:#bdbac5;border-radius:10px;font-size:15px;line-height:1.8;"><?php echo esc_html( $msg['text'] ); ?></p>
 		<?php endif; ?>
-<a href="<?php echo esc_url( $url ); ?>" style="display:inline-block;padding:12px 24px;background:#c8323a;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:bold;"><?php echo esc_html( $cta ); ?></a>
+<a href="<?php echo esc_url( $msg['url'] ); ?>" style="display:inline-block;padding:12px 24px;background:#c8323a;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:bold;"><?php echo esc_html( $msg['cta'] ); ?></a>
 </td></tr></table>
 <p style="max-width:520px;margin:16px auto 0;font-size:12px;line-height:1.7;color:#4e4b57;">
-		<?php esc_html_e( 'وصلتك هذه الرسالة لأن اللعبة في مفضلتك.', 'retrovault-core' ); ?> <a href="<?php echo esc_url( $unsub ); ?>" style="color:#2e46a6;"><?php esc_html_e( 'إيقاف رسائل التحديثات', 'retrovault-core' ); ?></a>
+		<?php esc_html_e( 'وصلتك هذه الرسالة لأن اللعبة في مفضلتك.', 'retrovault-core' ); ?> <a href="<?php echo esc_url( $msg['unsub'] ); ?>" style="color:#2e46a6;"><?php esc_html_e( 'إيقاف رسائل التحديثات', 'retrovault-core' ); ?></a>
 </p>
 </td></tr></table>
 </body>
@@ -354,30 +444,76 @@ final class Notifier {
 		);
 	}
 
-	/** يعالج رابط الإيقاف (GET من الرسالة أو POST بضغطة واحدة من برنامج البريد). */
+	/**
+	 * رابط الإيقاف الموقَّع:
+	 * - برامج البريد (زر «إلغاء الاشتراك») ترسل POST بضغطة واحدة (RFC 8058): إيقاف فوري بلا صفحة.
+	 * - فتح الرابط من الرسالة يعرض زر تأكيد، لأن برامج فحص الروابط في بعض خدمات البريد تفتحه
+	 *   وحدها، فكانت توقف الرسائل دون علم العضو.
+	 * - بعد الإيقاف زر «تراجع» يعيدها.
+	 */
 	public static function unsubscribe() {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- الرابط موقَّع بـ HMAC.
+		// phpcs:disable WordPress.Security.NonceVerification -- الرابط موقَّع بـ HMAC لكل عضو.
 		if ( ! isset( $_GET['rv_unsub'], $_GET['t'] ) ) {
 			return;
 		}
 		$user_id = absint( $_GET['rv_unsub'] );
 		$token   = sanitize_text_field( wp_unslash( $_GET['t'] ) );
-		// phpcs:enable
 		if ( ! $user_id || ! hash_equals( self::token( $user_id ), $token ) || ! get_userdata( $user_id ) ) {
 			wp_die( esc_html__( 'رابط الإيقاف غير صالح.', 'retrovault-core' ), '', array( 'response' => 400 ) );
 		}
-		self::set_email( $user_id, false );
-		if ( isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+		$post = isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === $_SERVER['REQUEST_METHOD'];
+		if ( $post && ! isset( $_POST['rv_choice'] ) ) {
+			self::set_email( $user_id, false );
 			status_header( 200 );
 			exit;
 		}
+		if ( $post ) {
+			self::set_email( $user_id, 'on' === sanitize_key( wp_unslash( $_POST['rv_choice'] ) ) );
+		}
+		// phpcs:enable
+		$on   = self::email_enabled( $user_id );
+		$home = '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html__( 'العودة إلى الموقع', 'retrovault-core' ) . '</a></p>';
+		if ( ! $post && $on ) {
+			self::page(
+				__( 'إيقاف رسائل التحديثات', 'retrovault-core' ),
+				'<p>' . esc_html__( 'لن تصلك رسائل عن الإصدارات الجديدة وتدوينات ألعاب مفضلتك، وستبقى تظهر لك داخل الموقع.', 'retrovault-core' ) . '</p>'
+				. self::choice_form( 'off', __( 'أوقف الرسائل', 'retrovault-core' ) ) . $home
+			);
+		}
+		if ( $on ) {
+			self::page(
+				__( 'رسائل التحديثات مفعّلة', 'retrovault-core' ),
+				'<p>' . esc_html__( 'ستصلك رسالة عند صدور إصدار جديد أو تدوينة عن ألعاب مفضلتك.', 'retrovault-core' ) . '</p>' . $home
+			);
+		}
 		$account = Account::url();
-		wp_die(
-			'<p>' . esc_html__( 'أُوقفت رسائل تحديثات الألعاب. ستبقى التحديثات تظهر لك داخل الموقع.', 'retrovault-core' ) . '</p>'
-			. ( $account ? '<p><a href="' . esc_url( $account ) . '">' . esc_html__( 'يمكنك إعادة تفعيلها من صفحة «حسابي»', 'retrovault-core' ) . '</a></p>' : '' ),
-			esc_html__( 'تم الإيقاف', 'retrovault-core' ),
-			array( 'response' => 200 )
+		self::page(
+			__( 'أُوقفت رسائل التحديثات', 'retrovault-core' ),
+			'<p>' . esc_html__( 'ستبقى التحديثات تظهر لك داخل الموقع، في «الجديد في ألعابك».', 'retrovault-core' ) . '</p>'
+			. self::choice_form( 'on', __( 'تراجع: أعد تفعيل الرسائل', 'retrovault-core' ) )
+			. ( $account ? '<p><a href="' . esc_url( $account ) . '">' . esc_html__( 'ويمكنك إعادة تفعيلها لاحقاً من صفحة «حسابي»', 'retrovault-core' ) . '</a></p>' : $home )
 		);
+	}
+
+	/**
+	 * صفحة ووردبريس البسيطة (بلا قالب الموقع، فالعضو قد لا يكون مسجلاً دخوله).
+	 *
+	 * @param string $title العنوان.
+	 * @param string $html  المحتوى (مُهرَّب).
+	 */
+	private static function page( $title, $html ) {
+		wp_die( '<main><h1>' . esc_html( $title ) . '</h1>' . $html . '</main>', esc_html( $title ), array( 'response' => 200 ) );
+	}
+
+	/**
+	 * زر يرسل الاختيار إلى الرابط الموقَّع نفسه.
+	 *
+	 * @param string $choice on أو off.
+	 * @param string $label  نص الزر.
+	 */
+	private static function choice_form( $choice, $label ) {
+		return '<form method="post"><input type="hidden" name="rv_choice" value="' . esc_attr( $choice ) . '">'
+			. '<p><button type="submit" class="button button-large">' . esc_html( $label ) . '</button></p></form>';
 	}
 
 	/* ---------------------------------------------------------------------

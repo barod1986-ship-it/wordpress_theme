@@ -230,6 +230,23 @@ fi
 check "the chosen password logs in" 302 "$(status -b 'wordpress_test_cookie=WP%20Cookie%20check' --data-urlencode 'log=newbie' \
 	--data-urlencode "pwd=it's-a-pass1" -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php")"
 
+echo "== Follower emails and devlog"
+# فتح رابط الإيقاف وحده (كما تفعل برامج فحص الروابط) لا يغيّر شيئاً؛ الإيقاف بزر أو بضغطة واحدة من برنامج البريد.
+unsub=$(wp eval 'echo RetroVault\Notifier::unsubscribe_url( get_user_by( "login", "member" )->ID );')
+curl -s -o /dev/null "$unsub"
+check "opening the unsubscribe link alone changes nothing" 1 "$(wp user meta get member _rv_notify_email)"
+curl -s -o /dev/null -d 'List-Unsubscribe=One-Click' "$unsub"
+check "one-click unsubscribe from the mail app" 0 "$(wp user meta get member _rv_notify_email)"
+curl -s -o /dev/null -d 'rv_choice=on' "$unsub"
+check "undo re-enables update emails" 1 "$(wp user meta get member _rv_notify_email)"
+# إلى ملف لا أنبوب: grep -q يخرج عند أول تطابق فيُقتل curl أثناء الكتابة، ومع pipefail يفشل الفحص.
+curl -s -o "$TMP/devlog.html" "$BASE/devlog-first-update/"
+if grep -q '<meta property="og:type" content="article">' "$TMP/devlog.html"; then
+	echo "ok devlog posts have share tags"
+else
+	fail "devlog posts are missing share tags"
+fi
+
 echo "== Admin"
 login admin
 for path in /wp-admin/ '/wp-admin/edit.php?post_type=rv_game' '/wp-admin/post-new.php?post_type=rv_game' \

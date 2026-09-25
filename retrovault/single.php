@@ -16,7 +16,13 @@ while ( have_posts() ) :
 		<?php rvt_breadcrumbs(); ?>
 		<header class="page__head">
 			<h1 class="page__title"><?php the_title(); ?></h1>
-			<p class="page__meta"><time datetime="<?php echo esc_attr( get_the_date( 'c' ) ); ?>"><?php echo esc_html( get_the_date() ); ?></time></p>
+			<div class="post-meta">
+				<p class="page__meta"><time datetime="<?php echo esc_attr( get_the_date( 'c' ) ); ?>"><?php echo esc_html( get_the_date() ); ?></time></p>
+				<button type="button" class="btn btn--ghost btn--sm" data-share data-title="<?php echo esc_attr( wp_strip_all_tags( get_the_title() ) ); ?>" data-url="<?php echo esc_url( get_permalink() ); ?>" data-copied="<?php esc_attr_e( 'نُسخ رابط التدوينة.', 'retrovault' ); ?>">
+					<?php echo rvt_icon( 'share' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					<?php esc_html_e( 'مشاركة', 'retrovault' ); ?>
+				</button>
+			</div>
 		</header>
 		<?php if ( has_post_thumbnail() ) : ?>
 			<figure class="page__media"><?php the_post_thumbnail( 'large' ); ?></figure>
@@ -41,8 +47,10 @@ while ( have_posts() ) :
 		wp_link_pages();
 		the_post_navigation(
 			array(
-				'prev_text' => '<span class="screen-reader-text">' . esc_html__( 'المقالة السابقة:', 'retrovault' ) . '</span> %title',
-				'next_text' => '<span class="screen-reader-text">' . esc_html__( 'المقالة التالية:', 'retrovault' ) . '</span> %title',
+				'prev_text'          => '<span class="post-nav__label">' . esc_html__( 'تدوينة أقدم', 'retrovault' ) . '</span> <span class="post-nav__title">%title</span>',
+				'next_text'          => '<span class="post-nav__label">' . esc_html__( 'تدوينة أحدث', 'retrovault' ) . '</span> <span class="post-nav__title">%title</span>',
+				'screen_reader_text' => __( 'تدوينات أخرى', 'retrovault' ),
+				'aria_label'         => __( 'تدوينات أخرى', 'retrovault' ),
 			)
 		);
 		if ( comments_open() || get_comments_number() ) {

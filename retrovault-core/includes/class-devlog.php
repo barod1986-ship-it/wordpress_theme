@@ -26,6 +26,18 @@ final class Devlog {
 		add_action( 'add_meta_boxes_post', array( __CLASS__, 'box' ) );
 		add_action( 'save_post_post', array( __CLASS__, 'save' ), 10, 2 );
 		add_action( 'admin_notices', array( __CLASS__, 'setup_notice' ) );
+		add_filter( 'excerpt_allowed_blocks', array( __CLASS__, 'excerpt_blocks' ) );
+	}
+
+	/**
+	 * المقتطف التلقائي (بطاقات اليوميات، رسائل المتابعين، وصف المشاركة) من الفقرات: العناوين والقوائم
+	 * والجداول تندمج فيه بالنص بلا فواصل («…هذه التفاصيل. القفز صار أدق كان ارتفاع…»).
+	 *
+	 * @param string[] $blocks المكوّنات المسموح بها في المقتطف.
+	 * @return string[]
+	 */
+	public static function excerpt_blocks( $blocks ) {
+		return array_values( array_diff( (array) $blocks, array( 'core/heading', 'core/list', 'core/table', 'core/preformatted' ) ) );
 	}
 
 	public static function register() {

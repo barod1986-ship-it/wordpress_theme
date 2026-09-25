@@ -237,6 +237,16 @@ function rv_account_url() {
 	return Account::url();
 }
 
+/**
+ * سجل تحديثات لعبة بصيغة HTML: أسطر «- …» تصبح قائمة.
+ *
+ * @param string $text نص السجل (من rv_get_game()['changelog']).
+ * @return string HTML يمر عبر wp_kses_post عند العرض.
+ */
+function rv_changelog_html( $text ) {
+	return Games::changelog_html( $text );
+}
+
 /** هل الصفحة الحالية هي صفحة «حسابي»؟ */
 function rv_is_account_page() {
 	return Account::is_page();

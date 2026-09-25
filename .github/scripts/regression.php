@@ -175,4 +175,57 @@ rv_assert( in_array( 'regsignup@example.com', $mails, true ), 'the previous addr
 remove_filter( 'pre_wp_mail', $capture_mail, 10 );
 remove_filter( 'send_auth_cookies', '__return_false' );
 wp_set_current_user( 1 );
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up and account regressions passed.' );
+// Changelog lines starting with a dash are a list on the game page and in the version email.
+rv_assert( '<p>1.1</p><ul><li>a</li><li>b</li></ul><p>note</p>' === \RetroVault\Games::changelog_html( "1.1\n- a\n* b\nnote" ), 'changelog dash lines render as a list' );
+$log = \RetroVault\Games::changelog_items( "1.2\n- one\n- two\n- three\n\n1.1\n- older", 2 );
+rv_assert( array( 'one', 'two' ) === $log['items'] && $log['more'], 'the version email takes the latest changelog section only' );
+
+// Follower emails: plain-text part, the site as sender, the changelog as a list.
+update_post_meta( $game_id, '_rv_changelog', "1.1\n- first item\n- second & third\n\n1.0\n- old entry" );
+\RetroVault\Games::flush( $game_id );
+$sent    = array();
+$sender  = static function () {
+	return 'wordpress@example.com';
+};
+$capture = static function ( $mailer ) use ( &$sent ) {
+	$sent = array(
+		'from' => $mailer->FromName,
+		'text' => $mailer->AltBody,
+		'html' => $mailer->Body,
+	);
+	$mailer->isSendmail();
+	$mailer->Sendmail = '/bin/true';
+};
+add_filter( 'wp_mail_from', $sender );
+add_action( 'phpmailer_init', $capture, 999 );
+$send = new ReflectionMethod( '\RetroVault\Notifier', 'mail' );
+$send->setAccessible( true );
+$send->invoke( null, get_userdata( $author ), array( 'type' => 'version', 'games' => array( $game_id ), 'ref' => 0, 'version' => '1.1', 'offset' => 0, 'job' => 'r' ) );
+remove_action( 'phpmailer_init', $capture, 999 );
+remove_filter( 'wp_mail_from', $sender );
+rv_assert( isset( $sent['from'] ) && get_bloginfo( 'name' ) === $sent['from'], 'follower emails are sent under the site name' );
+rv_assert( false !== strpos( $sent['text'], '• first item' ) && false !== strpos( $sent['text'], 'second & third' ) && false === strpos( $sent['text'], 'old entry' ), 'follower emails carry a plain-text part with the latest changes' );
+rv_assert( 2 === substr_count( $sent['html'], '<li' ) && false === strpos( $sent['html'], '- first' ), 'the HTML email lists changes without dash markers' );
+
+// Automatic devlog excerpts are built from paragraphs; headings no longer run into the text.
+$devlog = wp_insert_post(
+	array(
+		'post_type'    => 'post',
+		'post_status'  => 'publish',
+		'post_title'   => 'Regression devlog',
+		'post_content' => "<!-- wp:paragraph -->\n<p>First paragraph.</p>\n<!-- /wp:paragraph -->\n\n<!-- wp:heading -->\n<h2 class=\"wp-block-heading\">Hidden heading</h2>\n<!-- /wp:heading -->\n\n<!-- wp:paragraph -->\n<p>Second paragraph.</p>\n<!-- /wp:paragraph -->",
+	)
+);
+$excerpt = get_the_excerpt( $devlog );
+rv_assert( false === strpos( $excerpt, 'Hidden heading' ) && false !== strpos( $excerpt, 'Second paragraph' ), 'automatic devlog excerpts skip headings' );
+
+// Stats chart: a close round ceiling split into whole quarters, and whole weeks only.
+$nice = new ReflectionMethod( '\RetroVault\Analytics', 'nice' );
+$nice->setAccessible( true );
+rv_assert( 2400 === $nice->invoke( null, 2300 ) && 12000 === $nice->invoke( null, 11700 ) && 8 === $nice->invoke( null, 5 ) && 4 === $nice->invoke( null, 0 ), 'chart axis ceilings stay close to the data' );
+$days = array();
+for ( $i = 9; $i >= 0; $i-- ) {
+	$days[ gmdate( 'Y-m-d', time() - $i * DAY_IN_SECONDS ) ] = 1;
+}
+rv_assert( array( 7 ) === array_values( \RetroVault\Analytics::weekly( $days ) ), 'weekly chart bars are whole weeks ending today' );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email and stats regressions passed.' );

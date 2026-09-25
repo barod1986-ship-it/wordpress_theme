@@ -89,4 +89,11 @@
 .rv-hbar__value { text-align: end; font-variant-numeric: tabular-nums; }
 .rv-stats__table td, .rv-stats__table th { font-variant-numeric: tabular-nums; }
 .rv-sys { color: #646970; font-size: 11px; }
+/* الرسم والجدول يُمرَّران داخل صندوقيهما على الشاشات الضيقة بدل أن تتمدد الصفحة كلها */
+.rv-scroll { overflow-x: auto; }
+.rv-scroll:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
+.rv-stats__table { min-width: 640px; }
+@media (max-width: 600px) { .rv-scroll .rv-chart { min-width: 640px; } }
+.rv-stats__table tr.is-current td { background: #fcf9e8; font-weight: 600; }
+.rv-hbar.is-current .rv-hbar__label { font-weight: 700; }
 .rv-dash-spark .rv-chart { max-height: 70px; }
