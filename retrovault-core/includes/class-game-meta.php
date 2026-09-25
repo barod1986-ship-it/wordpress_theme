@@ -29,6 +29,7 @@ final class Game_Meta {
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'register' ), 6 );
 		add_action( 'add_meta_boxes_' . Post_Types::GAME, array( __CLASS__, 'boxes' ) );
+		add_action( 'post_submitbox_misc_actions', array( __CLASS__, 'submitbox_ready' ) );
 		add_action( 'save_post_' . Post_Types::GAME, array( __CLASS__, 'save' ), 10, 2 );
 		add_action( 'save_post_' . Post_Types::GAME, array( __CLASS__, 'ensure_defaults' ), 20 );
 		add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
@@ -401,7 +402,6 @@ final class Game_Meta {
 
 	public static function boxes() {
 		add_meta_box( 'rv_game_data', __( 'بيانات اللعبة', 'retrovault-core' ), array( __CLASS__, 'render' ), Post_Types::GAME, 'normal', 'high' );
-		add_meta_box( 'rv_game_ready', __( 'جاهزية اللعبة', 'retrovault-core' ), array( __CLASS__, 'render_ready' ), Post_Types::GAME, 'side', 'core' );
 		add_meta_box( 'rv_game_side', __( 'العرض والإحصائيات', 'retrovault-core' ), array( __CLASS__, 'render_side' ), Post_Types::GAME, 'side', 'default' );
 	}
 
@@ -416,6 +416,20 @@ final class Game_Meta {
 			'is-missing'  => __( 'ناقص:', 'retrovault-core' ),
 			'is-optional' => __( 'اختياري:', 'retrovault-core' ),
 		);
+	}
+
+	/**
+	 * «جاهزية اللعبة» داخل صندوق النشر، فوق زر «نشر» مباشرة.
+	 *
+	 * @param \WP_Post $post المحتوى.
+	 */
+	public static function submitbox_ready( $post ) {
+		if ( ! $post instanceof \WP_Post || Post_Types::GAME !== $post->post_type ) {
+			return;
+		}
+		echo '<div class="misc-pub-section rv-ready-box"><p class="rv-ready-box__title">' . esc_html__( 'جاهزية اللعبة', 'retrovault-core' ) . '</p>';
+		self::render_ready( $post );
+		echo '</div>';
 	}
 
 	/**
