@@ -62,10 +62,11 @@ while ( have_posts() ) :
 						}
 						if ( function_exists( 'rv_pwa_enabled' ) && rv_pwa_enabled() ) {
 							printf(
-								'<span class="chip chip--offline" data-rv-offline-badge data-key="%1$s" hidden>%2$s%3$s</span>',
+								'<span class="chip chip--offline" data-rv-offline-badge data-key="%1$s" data-version="%4$s" hidden>%2$s%3$s</span>',
 								esc_attr( rv_offline_key( $rvt_game['id'] ) ),
 								rvt_icon( 'check' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-								esc_html__( 'تعمل بدون إنترنت على هذا الجهاز', 'retrovault' )
+								esc_html__( 'تعمل بدون إنترنت على هذا الجهاز', 'retrovault' ),
+							esc_attr( $rvt_game['rom']['ver'] )
 							);
 						}
 						?>
