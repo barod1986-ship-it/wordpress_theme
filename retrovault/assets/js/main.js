@@ -531,7 +531,7 @@
 			return;
 		}
 		if (navigator.clipboard) {
-			navigator.clipboard.writeText(data.url).then(function () { toast(i18n.copied || data.url); });
+			navigator.clipboard.writeText(data.url).then(function () { toast(btn.getAttribute('data-copied') || i18n.copied || data.url); });
 		}
 	});
 

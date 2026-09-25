@@ -264,7 +264,7 @@ while ( have_posts() ) :
 						<section class="game-section">
 							<details class="log">
 								<summary><h2 class="game-section__title"><?php esc_html_e( 'سجل التحديثات', 'retrovault' ); ?></h2></summary>
-								<div class="entry"><?php echo wp_kses_post( wpautop( $rvt_game['changelog'] ) ); ?></div>
+								<div class="entry"><?php echo wp_kses_post( function_exists( 'rv_changelog_html' ) ? rv_changelog_html( $rvt_game['changelog'] ) : wpautop( $rvt_game['changelog'] ) ); ?></div>
 							</details>
 						</section>
 					<?php endif; ?>

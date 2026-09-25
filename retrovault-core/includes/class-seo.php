@@ -2,6 +2,7 @@
 /**
  * محركات البحث والمشاركة:
  * - بيانات منظمة schema.org/VideoGame (مع aggregateRating عند وجود تقييمات).
+ * - تدوينات يوميات التطوير: BlogPosting مع الألعاب التي تتحدث عنها.
  * - وسوم Open Graph ووصف الصفحة، فقط إن لم تكن هناك إضافة SEO تقوم بذلك.
  *
  * @package RetroVault
@@ -22,6 +23,10 @@ final class Seo {
 	}
 
 	public static function head() {
+		if ( is_singular( 'post' ) ) {
+			self::post_head();
+			return;
+		}
 		if ( ! is_singular( Post_Types::GAME ) ) {
 			return;
 		}
@@ -82,26 +87,104 @@ final class Seo {
 			);
 		}
 
-		echo '<script type="application/ld+json">' . wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG ) . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		self::json_ld( $schema );
 
 		if ( self::has_seo_plugin() ) {
 			return;
 		}
-		$tags = array(
-			'description'    => $description,
-			'og:type'        => 'website',
-			'og:title'       => $game['title'],
-			'og:description' => $description,
-			'og:url'         => $game['url'],
-			'og:site_name'   => get_bloginfo( 'name' ),
-			'og:image'       => $image,
-			'twitter:card'   => $image ? 'summary_large_image' : 'summary',
+		self::meta_tags(
+			array(
+				'description'    => $description,
+				'og:type'        => 'website',
+				'og:title'       => $game['title'],
+				'og:description' => $description,
+				'og:url'         => $game['url'],
+				'og:site_name'   => get_bloginfo( 'name' ),
+				'og:image'       => $image,
+				'twitter:card'   => $image ? 'summary_large_image' : 'summary',
+			)
 		);
+	}
+
+	/**
+	 * تدوينة من يوميات التطوير: صورتها (أو غلاف أول لعبة فيها) ووصفها عند مشاركتها. إضافات SEO
+	 * تتولى المقالات كاملة، فلا شيء هنا معها.
+	 */
+	private static function post_head() {
+		if ( self::has_seo_plugin() ) {
+			return;
+		}
+		$post        = get_post( get_queried_object_id() );
+		$description = wp_strip_all_tags( get_the_excerpt( $post ) );
+		$image       = has_post_thumbnail( $post ) ? (string) get_the_post_thumbnail_url( $post, 'large' ) : '';
+		$about       = array();
+		foreach ( Devlog::games_for_post( $post->ID ) as $game_id ) {
+			$game = Games::get( $game_id );
+			if ( ! $game ) {
+				continue;
+			}
+			$about[] = array(
+				'@type' => 'VideoGame',
+				'name'  => $game['title'],
+				'url'   => $game['url'],
+			);
+			if ( '' === $image && $game['cover_id'] ) {
+				$image = (string) wp_get_attachment_image_url( $game['cover_id'], 'large' );
+			}
+		}
+		$url    = (string) get_permalink( $post );
+		$schema = array(
+			'@context'         => 'https://schema.org',
+			'@type'            => 'BlogPosting',
+			'headline'         => get_the_title( $post ),
+			'url'              => $url,
+			'mainEntityOfPage' => $url,
+			'description'      => $description,
+			'datePublished'    => get_the_date( 'c', $post ),
+			'dateModified'     => get_the_modified_date( 'c', $post ),
+			'author'           => array(
+				'@type' => 'Person',
+				'name'  => get_the_author_meta( 'display_name', (int) $post->post_author ),
+			),
+		);
+		if ( $image ) {
+			$schema['image'] = $image;
+		}
+		if ( $about ) {
+			$schema['about'] = $about;
+		}
+		self::json_ld( $schema );
+		self::meta_tags(
+			array(
+				'description'            => $description,
+				'og:type'                => 'article',
+				'og:title'               => get_the_title( $post ),
+				'og:description'         => $description,
+				'og:url'                 => $url,
+				'og:site_name'           => get_bloginfo( 'name' ),
+				'og:image'               => $image,
+				'article:published_time' => get_the_date( 'c', $post ),
+				'twitter:card'           => $image ? 'summary_large_image' : 'summary',
+			)
+		);
+	}
+
+	/**
+	 * @param array $schema البيانات المنظمة.
+	 */
+	private static function json_ld( $schema ) {
+		echo '<script type="application/ld+json">' . wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG ) . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * @param array<string,string> $tags الوسوم (og: و article: خاصيات، والباقي أسماء).
+	 */
+	private static function meta_tags( $tags ) {
 		foreach ( $tags as $key => $value ) {
 			if ( '' === (string) $value ) {
 				continue;
 			}
-			$attr = ( 0 === strpos( $key, 'og:' ) ) ? 'property' : 'name';
+			$attr = ( 0 === strpos( $key, 'og:' ) || 0 === strpos( $key, 'article:' ) ) ? 'property' : 'name';
 			printf( '<meta %1$s="%2$s" content="%3$s">' . "\n", esc_attr( $attr ), esc_attr( $key ), esc_attr( $value ) );
 		}
 	}

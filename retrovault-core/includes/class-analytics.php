@@ -267,7 +267,8 @@ final class Analytics {
 		$n      = max( 1, count( $values ) );
 		$max    = self::nice( max( 1, max( $values ? $values : array( 0 ) ) ) );
 		$rtl    = is_rtl();
-		$pad    = $a['axis'] ? array( 'x' => 34, 't' => 8, 'b' => 22 ) : array( 'x' => 0, 't' => 2, 'b' => 2 );
+		// عرض أرقام المحور حسب أطولها (كان «20,000» يُقص إلى «20,00»).
+		$pad = $a['axis'] ? array( 'x' => max( 34, 10 + 7 * mb_strlen( number_format_i18n( $max ) ) ), 't' => 8, 'b' => 22 ) : array( 'x' => 0, 't' => 2, 'b' => 2 );
 		$plot_w = $a['width'] - $pad['x'] - 4;
 		$plot_h = $a['height'] - $pad['t'] - $pad['b'];
 		$bw     = $plot_w / $n;
@@ -306,34 +307,42 @@ final class Analytics {
 	}
 
 	/**
-	 * سقف «جميل» للمحور (1، 2، 5 × 10^ن).
+	 * سقف مستدير للمحور قريب من أعلى قيمة، يقسمه خطوط الشبكة الأربعة إلى أعداد صحيحة
+	 * (سقوف 1-2-5 وحدها تترك نصف الرسم فارغاً أحياناً: 2,300 كانت ترسم على محور 5,000).
 	 *
 	 * @param float $v القيمة القصوى.
+	 * @return int
 	 */
 	private static function nice( $v ) {
+		$v   = max( 1, (float) $v );
 		$exp = pow( 10, floor( log10( $v ) ) );
-		foreach ( array( 1, 2, 5, 10 ) as $m ) {
-			if ( $v <= $m * $exp ) {
-				return $m * $exp;
+		for ( $i = 0; $i < 3; $i++, $exp *= 10 ) {
+			foreach ( array( 1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8 ) as $m ) {
+				$top = (int) round( $m * $exp );
+				if ( $top >= $v && 0 === $top % 4 ) {
+					return $top;
+				}
 			}
 		}
-		return 10 * $exp;
+		return (int) ceil( $v / 4 ) * 4;
 	}
 
 	/**
-	 * تجميع أسبوعي للفترات الطويلة (سنة = 52 عموداً بدل 365).
+	 * تجميع أسبوعي للفترات الطويلة (سنة = 52 عموداً بدل 365)، أسابيع كاملة تنتهي باليوم: الأيام
+	 * الزائدة في أول الفترة لا تُرسم عموداً ناقصاً يبدو هبوطاً (مجموعها في الأرقام أعلى الصفحة).
 	 *
-	 * @param array<string,int> $series السلسلة اليومية.
-	 * @return array<string,int>
+	 * @param array<string,int> $series السلسلة اليومية (الأقدم أولاً).
+	 * @return array<string,int> آخر يوم في كل أسبوع => مجموعه (الأقدم أولاً).
 	 */
-	private static function weekly( $series ) {
-		$out   = array();
-		$chunk = array_chunk( $series, 7, true );
-		foreach ( $chunk as $week ) {
-			$keys                = array_keys( $week );
-			$out[ end( $keys ) ] = array_sum( $week );
+	public static function weekly( $series ) {
+		$out = array();
+		foreach ( array_chunk( array_reverse( $series, true ), 7, true ) as $week ) {
+			if ( count( $week ) < 7 && $out ) {
+				break;
+			}
+			$out[ array_key_first( $week ) ] = array_sum( $week );
 		}
-		return $out;
+		return array_reverse( $out, true );
 	}
 
 	/* ---------------------------------------------------------------------
@@ -387,11 +396,24 @@ final class Analytics {
 		$game   = $p['game'];
 		$now    = self::totals( $days, $game );
 		$prev   = self::totals( $days, $game, $days );
+		$since  = (string) get_option( self::SINCE );
 		$series = self::series( 'plays', $days, $game );
-		$chart  = $days > 90 ? self::weekly( $series ) : $series;
-		$rows   = self::per_game( $days );
-		$hist   = self::rating_histogram( $game );
-		$since  = get_option( self::SINCE );
+		if ( $since ) {
+			// الأيام قبل بدء السجل اليومي ليست «صفراً»، فلا تُرسم.
+			$series = array_filter(
+				$series,
+				static function ( $day ) use ( $since ) {
+					return $day >= $since;
+				},
+				ARRAY_FILTER_USE_KEY
+			);
+		}
+		$weekly = count( $series ) > 90;
+		$chart  = $weekly ? self::weekly( $series ) : $series;
+		// مرات اللعب والتنزيلات من السجل اليومي: لا مقارنة بفترة سابقة بدأت قبله.
+		$compare = ! $since || $since <= self::day( -2 * $days + 1 );
+		$rows    = self::per_game( $days );
+		$hist    = self::rating_histogram( $game );
 		$games  = get_posts( array( 'post_type' => Post_Types::GAME, 'post_status' => 'publish', 'posts_per_page' => -1, 'orderby' => 'title', 'order' => 'ASC' ) );
 		$labels = array(
 			7   => __( 'آخر 7 أيام', 'retrovault-core' ),
@@ -416,12 +438,14 @@ final class Analytics {
 			<form method="get" class="rv-stats__filters">
 				<input type="hidden" name="post_type" value="<?php echo esc_attr( Post_Types::GAME ); ?>">
 				<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE ); ?>">
-				<select name="period" onchange="this.form.submit()">
+				<label class="screen-reader-text" for="rv-stats-period"><?php esc_html_e( 'الفترة', 'retrovault-core' ); ?></label>
+				<select name="period" id="rv-stats-period" onchange="this.form.submit()">
 					<?php foreach ( $labels as $d => $label ) : ?>
 						<option value="<?php echo esc_attr( $d ); ?>" <?php selected( $days, $d ); ?>><?php echo esc_html( $label ); ?></option>
 					<?php endforeach; ?>
 				</select>
-				<select name="game" onchange="this.form.submit()">
+				<label class="screen-reader-text" for="rv-stats-game"><?php esc_html_e( 'اللعبة', 'retrovault-core' ); ?></label>
+				<select name="game" id="rv-stats-game" onchange="this.form.submit()">
 					<option value="0"><?php esc_html_e( 'كل الألعاب', 'retrovault-core' ); ?></option>
 					<?php foreach ( $games as $g ) : ?>
 						<option value="<?php echo esc_attr( $g->ID ); ?>" <?php selected( $game, $g->ID ); ?>><?php echo esc_html( get_the_title( $g ) ); ?></option>
@@ -436,16 +460,30 @@ final class Analytics {
 					<li>
 						<span class="rv-kpis__label"><?php echo esc_html( $label ); ?></span>
 						<strong><?php echo esc_html( number_format_i18n( $now[ $key ] ) ); ?></strong>
-						<?php echo self::delta( $now[ $key ], $prev[ $key ] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+						<?php
+						if ( $compare || ! in_array( $key, array( 'plays', 'downloads' ), true ) ) {
+							echo self::delta( $now[ $key ], $prev[ $key ] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						}
+						?>
 					</li>
 				<?php endforeach; ?>
 			</ul>
-			<p class="description"><?php echo esc_html( sprintf( /* translators: %s: period */ __( 'النسبة مقارنة بالفترة السابقة المساوية (%s قبلها).', 'retrovault-core' ), $labels[ $days ] ) ); ?></p>
+			<p class="description">
+				<?php
+				echo esc_html( sprintf( /* translators: %s: period */ __( 'النسبة مقارنة بالفترة السابقة المساوية (%s قبلها).', 'retrovault-core' ), $labels[ $days ] ) );
+				if ( ! $compare ) {
+					echo ' ' . esc_html__( 'مرات اللعب والتنزيلات بلا مقارنة، لأن السجل اليومي بدأ بعد بداية الفترة السابقة.', 'retrovault-core' );
+				}
+				?>
+			</p>
 
 			<div class="postbox rv-box">
-				<h2 class="hndle"><?php echo esc_html( $days > 90 ? __( 'مرات اللعب أسبوعياً', 'retrovault-core' ) : __( 'مرات اللعب يومياً', 'retrovault-core' ) ); ?></h2>
+				<h2 class="hndle"><?php echo esc_html( $weekly ? __( 'مرات اللعب أسبوعياً', 'retrovault-core' ) : __( 'مرات اللعب يومياً', 'retrovault-core' ) ); ?></h2>
 				<div class="inside">
-					<?php echo self::bars( $chart, array( 'label' => __( 'مرات اللعب', 'retrovault-core' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					<?php // على الشاشات الضيقة يُمرَّر الرسم، ويبدأ من جهة أحدث الأيام (يسار الرسم في RTL). ?>
+					<div class="rv-scroll" dir="<?php echo is_rtl() ? 'ltr' : 'rtl'; ?>" tabindex="0" role="region" aria-label="<?php esc_attr_e( 'رسم مرات اللعب', 'retrovault-core' ); ?>">
+						<?php echo self::bars( $chart, array( 'label' => __( 'مرات اللعب', 'retrovault-core' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					</div>
 					<?php if ( $since ) : ?>
 						<p class="description">
 							<?php
@@ -469,7 +507,7 @@ final class Analytics {
 						}
 						foreach ( $top as $r ) :
 							?>
-							<div class="rv-hbar">
+							<div class="rv-hbar<?php echo $game === $r['id'] ? ' is-current' : ''; ?>">
 								<a class="rv-hbar__label" href="<?php echo esc_url( add_query_arg( 'game', $r['id'] ) ); ?>"><?php echo esc_html( $r['title'] ); ?></a>
 								<span class="rv-hbar__track"><span style="width:<?php echo esc_attr( round( $r['plays'] / $peak * 100, 1 ) ); ?>%"></span></span>
 								<span class="rv-hbar__value"><?php echo esc_html( number_format_i18n( $r['plays'] ) ); ?></span>
@@ -495,8 +533,9 @@ final class Analytics {
 			</div>
 
 			<div class="postbox rv-box">
-				<h2 class="hndle"><?php esc_html_e( 'كل الألعاب', 'retrovault-core' ); ?></h2>
+				<h2 class="hndle" id="rv-all-games"><?php esc_html_e( 'كل الألعاب', 'retrovault-core' ); ?></h2>
 				<div class="inside">
+					<div class="rv-scroll" tabindex="0" role="region" aria-labelledby="rv-all-games">
 					<table class="widefat striped rv-stats__table">
 						<thead>
 							<tr>
@@ -511,7 +550,7 @@ final class Analytics {
 						</thead>
 						<tbody>
 							<?php foreach ( $rows as $r ) : ?>
-								<tr>
+								<tr<?php echo $game === $r['id'] ? ' class="is-current" aria-current="true"' : ''; ?>>
 									<td><a href="<?php echo esc_url( add_query_arg( 'game', $r['id'] ) ); ?>"><?php echo esc_html( $r['title'] ); ?></a> <span class="rv-sys"><?php echo esc_html( $r['system'] ); ?></span></td>
 									<td><?php echo esc_html( number_format_i18n( $r['plays'] ) ); ?></td>
 									<td><?php echo esc_html( number_format_i18n( $r['total'] ) ); ?></td>
@@ -523,6 +562,7 @@ final class Analytics {
 							<?php endforeach; ?>
 						</tbody>
 					</table>
+					</div>
 				</div>
 			</div>
 		</div>

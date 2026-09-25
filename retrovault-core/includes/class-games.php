@@ -12,6 +12,9 @@ defined( 'ABSPATH' ) || exit;
 
 final class Games {
 
+	/** سطر من قائمة في سجل التحديثات: يبدأ بـ - أو * أو • أو –. */
+	const LOG_ITEM = '/^[-*\x{2022}\x{2013}]\s+(.+)$/u';
+
 	/** @var array<int,array> */
 	private static $cache = array();
 
@@ -79,6 +82,78 @@ final class Games {
 			$where .= " AND {$wpdb->posts}.post_modified_gmt > DATE_ADD({$wpdb->posts}.post_date_gmt, INTERVAL 1 DAY)";
 		}
 		return $where;
+	}
+
+	/**
+	 * سجل التحديثات بصيغة HTML: الأسطر التي تبدأ بـ - أو * أو • تصبح قائمة، وما عداها فقرات.
+	 * سجل مكتوب بوسوم HTML (قائمة أو فقرات) يبقى كما كتبه صاحبه.
+	 *
+	 * @param string $text نص السجل (منقّح عند الحفظ).
+	 * @return string
+	 */
+	public static function changelog_html( $text ) {
+		$text = trim( (string) $text );
+		if ( '' === $text || preg_match( '/<(ul|ol|li|p|br|h[1-6])\b/i', $text ) ) {
+			return wpautop( $text );
+		}
+		$html  = '';
+		$items = array();
+		foreach ( (array) preg_split( '/\R/u', $text ) as $line ) {
+			$line = trim( $line );
+			if ( preg_match( self::LOG_ITEM, $line, $m ) ) {
+				$items[] = '<li>' . $m[1] . '</li>';
+				continue;
+			}
+			if ( $items ) {
+				$html .= '<ul>' . implode( '', $items ) . '</ul>';
+				$items = array();
+			}
+			if ( '' !== $line ) {
+				$html .= '<p>' . $line . '</p>';
+			}
+		}
+		return $items ? $html . '<ul>' . implode( '', $items ) . '</ul>' : $html;
+	}
+
+	/**
+	 * أحدث قسم في سجل التحديثات كنقاط نصية (لرسالة الإصدار الجديد): الأسطر حتى أول سطر فارغ.
+	 * إن كان فيه أسطر قائمة تُؤخذ وحدها (فيسقط سطر عنوان الإصدار فوقها)، بلا علاماتها.
+	 *
+	 * @param string $text نص السجل.
+	 * @param int    $max  أقصى عدد من النقاط.
+	 * @return array{items:string[],more:bool}
+	 */
+	public static function changelog_items( $text, $max = 5 ) {
+		$text  = wp_strip_all_tags( (string) preg_replace( '#<br\s*/?>|</(li|p|div|h[1-6])>#i', "\n", (string) $text ) );
+		$lines = array();
+		foreach ( (array) preg_split( '/\R/u', $text ) as $line ) {
+			$line = trim( $line );
+			if ( '' === $line ) {
+				if ( $lines ) {
+					break;
+				}
+				continue;
+			}
+			$lines[] = $line;
+		}
+		$items = array();
+		foreach ( $lines as $line ) {
+			if ( preg_match( self::LOG_ITEM, $line, $m ) ) {
+				$items[] = trim( $m[1] );
+			}
+		}
+		if ( ! $items ) {
+			$items = $lines;
+		}
+		return array(
+			'items' => array_map(
+				static function ( $item ) {
+					return wp_html_excerpt( $item, 140, '…' );
+				},
+				array_slice( $items, 0, $max )
+			),
+			'more'  => count( $items ) > $max,
+		);
 	}
 
 	/**
