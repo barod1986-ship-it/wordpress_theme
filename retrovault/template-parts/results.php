@@ -13,6 +13,8 @@ $rvt_f      = rv_current_filters();
 $rvt_all    = wp_count_posts( 'rv_game' );
 $rvt_empty  = empty( $rvt_all->publish );
 $rvt_active = '' !== $rvt_f['q'] || 'newest' !== $rvt_f['sort'] || rvt_active_filters( $rvt_f );
+// صفحة نظام أو نوع بلا فلاتر فوقه: فلتر الصفحة نفسها لا يُعدّ.
+$rvt_active_extra = '' !== $rvt_f['q'] || 'newest' !== $rvt_f['sort'] || rvt_active_filters( $rvt_f ) > ( is_tax() ? 1 : 0 );
 ?>
 <div id="rv-results" class="results" data-count="<?php echo esc_attr( have_posts() ? rvt_count( $rvt_total, 'games' ) : __( 'لا نتائج', 'retrovault' ) ); ?>">
 	<?php if ( have_posts() ) : ?>
@@ -56,6 +58,11 @@ $rvt_active = '' !== $rvt_f['q'] || 'newest' !== $rvt_f['sort'] || rvt_active_fi
 			<?php else : ?>
 				<p><?php esc_html_e( 'تُضاف الألعاب قريباً، عُد لاحقاً.', 'retrovault' ); ?></p>
 			<?php endif; ?>
+		</div>
+	<?php elseif ( is_tax() && ! $rvt_active_extra ) : ?>
+		<div class="empty">
+			<p class="empty__title"><?php /* translators: %s: system or genre */ echo esc_html( sprintf( __( 'لم تُضف ألعاب %s بعد.', 'retrovault' ), single_term_title( '', false ) ) ); ?></p>
+			<a class="btn btn--pill" href="<?php echo esc_url( rvt_library_url() ); ?>"><?php esc_html_e( 'تصفّح المكتبة', 'retrovault' ); ?></a>
 		</div>
 	<?php else : ?>
 		<div class="empty">

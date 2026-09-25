@@ -296,4 +296,26 @@ unset( $_REQUEST['action'] );
 $GLOBALS['pagenow'] = $pagenow_before;
 
 rv_assert( "'=HYPERLINK(1)" === \RetroVault\Analytics::csv_text( '=HYPERLINK(1)' ) && 'Pixel Quest' === \RetroVault\Analytics::csv_text( 'Pixel Quest' ), 'CSV export cells cannot start a spreadsheet formula' );
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats and limit regressions passed.' );
+
+// Search engines (1.15): no author sitemap or account page in the sitemap, usernames kept out of public output.
+$sitemaps = wp_sitemaps_get_server();
+rv_assert( ! array_key_exists( 'users', $sitemaps->registry->get_providers() ), 'the sitemap has no author list (it exposes login names)' );
+$pages = array_column( $sitemaps->registry->get_provider( 'posts' )->get_url_list( 1, 'page' ), 'loc' );
+rv_assert( \RetroVault\Account::url() && ! in_array( \RetroVault\Account::url(), $pages, true ), 'the account page is not in the sitemap' );
+rv_assert( home_url( '/' ) === \RetroVault\Guard::oembed_author( array( 'author_url' => get_author_posts_url( 1 ) ) )['author_url'], 'embeds do not link the author archive' );
+rv_assert( array( 'comment', 'byuser' ) === \RetroVault\Guard::comment_class( array( 'comment', 'byuser', 'comment-author-admin' ) ), 'comment classes do not carry login names' );
+$writers = get_users( array( 'capability' => 'edit_posts', 'fields' => array( 'ID', 'display_name' ) ) );
+foreach ( $writers as $writer ) {
+	wp_update_user( array( 'ID' => $writer->ID, 'display_name' => 'Writer ' . $writer->ID ) );
+}
+rv_assert( 'good' === \RetroVault\Guard::site_health_logins()['status'], 'Site Health passes when no writer shows their login name' );
+wp_update_user( array( 'ID' => 1, 'display_name' => get_userdata( 1 )->user_login ) );
+rv_assert( 'recommended' === \RetroVault\Guard::site_health_logins()['status'], 'Site Health flags a display name that is the login name' );
+foreach ( $writers as $writer ) {
+	wp_update_user( array( 'ID' => $writer->ID, 'display_name' => $writer->display_name ) );
+}
+$_GET = array( 'genre' => 'rpg' );
+$filtered = \RetroVault\Query::is_filtered();
+$_GET = array();
+rv_assert( $filtered && ! \RetroVault\Query::is_filtered(), 'a genre filter on a system page counts as filtered, the page itself does not' );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit and search-engine regressions passed.' );

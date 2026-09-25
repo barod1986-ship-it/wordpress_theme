@@ -189,22 +189,25 @@ final class Query {
 	}
 
 	/**
-	 * صفحات الفلترة والفرز مكررة المحتوى؛ نطلب من محركات البحث عدم فهرستها.
+	 * هل في الرابط فلتر أو فرز أو بحث؟ (/system/nes/ نفسها ليست مفلترة؛ /system/nes/?genre=action مفلترة.)
+	 */
+	public static function is_filtered() {
+		foreach ( array( 'q', 'sort', 'players', 'status', 'system', 'genre' ) as $name ) {
+			if ( '' !== self::param( $name ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * صفحات الفلترة والفرز مكررة المحتوى؛ نطلب من محركات البحث عدم فهرستها. صفحات الأنظمة والأنواع
+	 * نفسها (/system/nes/) تبقى مفهرسة.
 	 *
 	 * @param array $robots توجيهات robots.
 	 */
 	public static function robots( $robots ) {
-		if ( ! self::is_library() ) {
-			return $robots;
-		}
-		foreach ( array( 'q', 'sort', 'players', 'status' ) as $name ) {
-			if ( '' !== self::param( $name ) ) {
-				$robots['noindex'] = true;
-				$robots['follow']  = true;
-				break;
-			}
-		}
-		if ( is_post_type_archive( Post_Types::GAME ) && ( '' !== self::param( 'system' ) || '' !== self::param( 'genre' ) ) ) {
+		if ( self::is_library() && self::is_filtered() ) {
 			$robots['noindex'] = true;
 			$robots['follow']  = true;
 		}
