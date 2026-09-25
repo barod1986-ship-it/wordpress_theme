@@ -230,6 +230,21 @@ fi
 check "the chosen password logs in" 302 "$(status -b 'wordpress_test_cookie=WP%20Cookie%20check' --data-urlencode 'log=newbie' \
 	--data-urlencode "pwd=it's-a-pass1" -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php")"
 
+echo "== Security limits"
+# خمس كلمات مرور خاطئة لاسم واحد من اتصال واحد: حتى الصحيحة تُرفض بعدها 15 دقيقة (200 بدل التحويل 302).
+for _ in 1 2 3 4 5; do
+	curl -s -o /dev/null -b 'wordpress_test_cookie=WP%20Cookie%20check' --data-urlencode 'log=newbie' \
+		--data-urlencode 'pwd=wrong-password' -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php"
+done
+check "five wrong passwords lock that login for this connection" 200 "$(status -b 'wordpress_test_cookie=WP%20Cookie%20check' \
+	--data-urlencode 'log=newbie' --data-urlencode "pwd=it's-a-pass1" -d 'wp-submit=Log+In&testcookie=1' "$BASE/wp-login.php")"
+curl -s -D "$TMP/account.headers" -o /dev/null -b "$TMP/member.jar" "$BASE/account/"
+if grep -qi '^x-frame-options: sameorigin' "$TMP/account.headers"; then
+	echo "ok the account page cannot be framed by other sites"
+else
+	fail "the account page can be framed by other sites"
+fi
+
 echo "== Follower emails and devlog"
 # فتح رابط الإيقاف وحده (كما تفعل برامج فحص الروابط) لا يغيّر شيئاً؛ الإيقاف بزر أو بضغطة واحدة من برنامج البريد.
 unsub=$(wp eval 'echo RetroVault\Notifier::unsubscribe_url( get_user_by( "login", "member" )->ID );')

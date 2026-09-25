@@ -502,6 +502,7 @@ final class Notifier {
 	 * @param string $html  المحتوى (مُهرَّب).
 	 */
 	private static function page( $title, $html ) {
+		Guard::no_framing();
 		wp_die( '<main><h1>' . esc_html( $title ) . '</h1>' . $html . '</main>', esc_html( $title ), array( 'response' => 200 ) );
 	}
 

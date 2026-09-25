@@ -58,8 +58,24 @@ final class Stats {
 
 	/** بصمة الزائر: عنوان IP بعد التشفير مع مفتاح الموقع. */
 	private static function fingerprint() {
+		return wp_hash( self::client_ip() . '|' . get_current_user_id() );
+	}
+
+	/**
+	 * عنوان الزائر للعدّادات والحدود. عنوان IPv6 يُختصر إلى شبكته (/64): الجهاز الواحد يغيّر باقي
+	 * العنوان متى شاء، فيُحسب زائراً جديداً في كل مرة. خلف وسيط (CDN) يمرر الموقع العنوان
+	 * الحقيقي عبر المرشّح retrovault_client_ip.
+	 */
+	public static function client_ip() {
 		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		return wp_hash( $ip . '|' . get_current_user_id() );
+		$ip = (string) apply_filters( 'retrovault_client_ip', $ip );
+		if ( false !== strpos( $ip, ':' ) && function_exists( 'inet_pton' ) ) {
+			$bin = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- عنوان غير صالح يرجع false.
+			if ( false !== $bin && 16 === strlen( $bin ) ) {
+				$ip = bin2hex( substr( $bin, 0, 8 ) ) . '::/64';
+			}
+		}
+		return $ip;
 	}
 
 	/**

@@ -14,6 +14,7 @@ $rvt_favs    = rv_get_favorites( $rvt_user->ID );
 $rvt_ratings = rv_get_user_ratings( $rvt_user->ID );
 $rvt_notices = function_exists( 'rv_get_notices' ) ? rv_get_notices( $rvt_user->ID, 10 ) : array();
 $rvt_form    = function_exists( 'rv_account_settings_form' );
+$rvt_space   = ( $rvt_cloud && function_exists( 'rv_saves_usage' ) ) ? rv_saves_usage( $rvt_user->ID ) : null;
 ?>
 <div class="account-page">
 	<header class="account-head">
@@ -82,6 +83,25 @@ $rvt_form    = function_exists( 'rv_account_settings_form' );
 					<span class="count-badge"><?php echo esc_html( number_format_i18n( count( $rvt_saves ) ) ); ?></span>
 				<?php endif; ?>
 			</h2>
+			<?php if ( $rvt_space && $rvt_space['used'] > 0 ) : ?>
+				<?php $rvt_full = $rvt_space['used'] >= 0.8 * $rvt_space['quota']; ?>
+				<p class="save-space<?php echo $rvt_full ? ' is-full' : ''; ?>">
+					<label for="save-space"><?php esc_html_e( 'مساحة الحفظ', 'retrovault' ); ?></label>
+					<meter id="save-space" min="0" max="<?php echo esc_attr( $rvt_space['quota'] ); ?>" high="<?php echo esc_attr( (int) ( 0.8 * $rvt_space['quota'] ) ); ?>" value="<?php echo esc_attr( $rvt_space['used'] ); ?>"></meter>
+					<span>
+						<?php
+						echo wp_kses(
+							/* translators: 1: used size, 2: quota */
+							sprintf( esc_html__( '%1$s من %2$s', 'retrovault' ), '<bdi>' . esc_html( size_format( $rvt_space['used'], 1 ) ) . '</bdi>', '<bdi>' . esc_html( size_format( $rvt_space['quota'] ) ) . '</bdi>' ),
+							array( 'bdi' => array() )
+						);
+						if ( $rvt_full ) {
+							echo ' — ' . esc_html__( 'احذف الحفظات القديمة لتبقى مساحة للجديدة.', 'retrovault' );
+						}
+						?>
+					</span>
+				</p>
+			<?php endif; ?>
 			<?php if ( $rvt_saves ) : ?>
 				<div class="save-grid">
 					<?php

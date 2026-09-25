@@ -37,6 +37,7 @@ final class Settings {
 			'sram_sync'   => 1,
 			'save_slots'  => 3,
 			'save_max_mb' => 32,
+			'save_quota_mb' => 100,
 			'netplay'     => 0,
 			'netplay_url' => '',
 			'notify_email'   => 1,
@@ -137,6 +138,7 @@ final class Settings {
 		$out['sram_sync']   = empty( $input['sram_sync'] ) ? 0 : 1;
 		$out['save_slots']  = isset( $input['save_slots'] ) ? max( 1, min( 10, absint( $input['save_slots'] ) ) ) : 3;
 		$out['save_max_mb'] = isset( $input['save_max_mb'] ) ? max( 1, min( 256, absint( $input['save_max_mb'] ) ) ) : 32;
+		$out['save_quota_mb'] = isset( $input['save_quota_mb'] ) ? max( 5, min( 10240, absint( $input['save_quota_mb'] ) ) ) : 100;
 		$out['netplay']     = empty( $input['netplay'] ) ? 0 : 1;
 		$out['notify_email'] = empty( $input['notify_email'] ) ? 0 : 1;
 		$out['instant_signup'] = empty( $input['instant_signup'] ) ? 0 : 1;
@@ -209,6 +211,7 @@ final class Settings {
 							<p class="description"><?php esc_html_e( 'ملفات الألعاب المرفوعة تُنقل إلى مجلد محمي على Apache/LiteSpeed عند تفعيل قواعد ‎.htaccess، ويصل إليها المشغّل برابط مؤقت مرتبط بجلسة المتصفح. فتح الرابط مباشرة أو مشاركته وحده لا يسمح بالتنزيل. زر التنزيل (إن سمحت به) يرسل الملف دون كشف مكانه. إذا فشلت حماية المرفق يتوقف تشغيله وتنزيله. استخراج النسخة التي وصلت إلى جهاز اللاعب يظل ممكناً.', 'retrovault-core' ); ?></p>
 							<p class="description"><?php esc_html_e( 'على nginx يلزم تطبيق قاعدة المنع التالية؛ الاسم العشوائي وحده لا يحمي المجلد. طبّق المنع على CDN أيضاً إن كان يقدّم ملفات الرفع مباشرة:', 'retrovault-core' ); ?></p>
 							<p class="description"><code dir="ltr">location ^~ <?php echo esc_html( (string) wp_parse_url( trailingslashit( wp_upload_dir( null, false )['baseurl'] ) . Roms::DIR . '/', PHP_URL_PATH ) ); ?> { deny all; }</code></p>
+							<p class="description"><?php esc_html_e( 'والمثل لمجلد حفظات الأعضاء:', 'retrovault-core' ); ?> <code dir="ltr">location ^~ <?php echo esc_html( (string) wp_parse_url( trailingslashit( wp_upload_dir( null, false )['baseurl'] ) . Saves::DIR . '/', PHP_URL_PATH ) ); ?> { deny all; }</code></p>
 						</td>
 					</tr>
 					<tr>
@@ -228,6 +231,11 @@ final class Settings {
 							<p>
 								<label for="rv-save-max"><?php esc_html_e( 'الحد الأقصى لحجم الحفظ (ميغابايت، بعد الضغط):', 'retrovault-core' ); ?></label>
 								<input type="number" min="1" max="256" id="rv-save-max" class="small-text" name="<?php echo esc_attr( $name ); ?>[save_max_mb]" value="<?php echo esc_attr( $o['save_max_mb'] ); ?>">
+							</p>
+							<p>
+								<label for="rv-save-quota"><?php esc_html_e( 'مساحة الحفظ لكل عضو (ميغابايت):', 'retrovault-core' ); ?></label>
+								<input type="number" min="5" max="10240" id="rv-save-quota" class="small-text" name="<?php echo esc_attr( $name ); ?>[save_quota_mb]" value="<?php echo esc_attr( $o['save_quota_mb'] ); ?>">
+								<span class="description"><?php esc_html_e( 'كل الحالات ولقطاتها وحفظ اللعبة الداخلي في حسابه معاً. عند امتلائها يحذف العضو حفظات قديمة من «حسابي» ليحفظ من جديد، فلا تمتلئ مساحة موقعك بحسابات كثيرة.', 'retrovault-core' ); ?></span>
 							</p>
 							<p class="description">
 								<?php

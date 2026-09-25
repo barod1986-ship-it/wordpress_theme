@@ -17,6 +17,9 @@ final class Signup {
 
 	const MIN_LENGTH = 8;
 
+	/** حسابات فورية من اتصال واحد في الساعة (المرشّح retrovault_signups_per_hour). */
+	const PER_HOUR = 5;
+
 	/** ملف تعريف ارتباط قصير يرحّب به القالب بالعضو الجديد مرة واحدة. */
 	const WELCOME_COOKIE = 'rv_welcome';
 
@@ -108,6 +111,11 @@ final class Signup {
 		}
 		$password = isset( $_POST['rv_pass'] ) && is_string( $_POST['rv_pass'] ) ? $_POST['rv_pass'] : '';
 		// phpcs:enable
+		// الحساب الفوري يعمل فوراً، فلا يُنشئ اتصال واحد حسابات بلا حد (برامج آلية تملأ الموقع أو مساحة الحفظ).
+		if ( Guard::blocked( 'signup', '', self::per_hour() ) ) {
+			$errors->add( 'rv_signup_limit', self::error( __( 'أُنشئت حسابات كثيرة من اتصالك خلال الساعة الأخيرة. حاول لاحقاً.', 'retrovault-core' ) ) );
+			return $errors;
+		}
 		if ( '' === $password ) {
 			$errors->add( 'rv_pass_empty', self::error( __( 'اختر كلمة مرور لحسابك.', 'retrovault-core' ) ) );
 		} elseif ( self::too_short( $password ) ) {
@@ -117,6 +125,10 @@ final class Signup {
 			self::$password = $password;
 		}
 		return $errors;
+	}
+
+	private static function per_hour() {
+		return max( 0, (int) apply_filters( 'retrovault_signups_per_hour', self::PER_HOUR ) );
 	}
 
 	/**
@@ -147,6 +159,7 @@ final class Signup {
 
 		wp_set_password( $password, $user_id );
 		delete_user_meta( $user_id, 'default_password_nag' );
+		Guard::fail( 'signup', '' );
 
 		// إشعار «عضو جديد» للمدير كالمعتاد. رسالة العضو فيها رابط لتعيين كلمة مرور اختارها للتو، فلا تُرسل.
 		remove_action( 'register_new_user', 'wp_send_new_user_notifications' );
