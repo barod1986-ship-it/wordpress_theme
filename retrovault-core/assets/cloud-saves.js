@@ -142,6 +142,11 @@
 			return api('/sram', { method: 'POST', body: form, keepalive: p.data.size < 60000 });
 		}).then(function (r) {
 			if (r.status === 409) { blocked = true; say(C.i18n.sramChanged); }
+			if (r.status === 413) {
+				/* امتلأت مساحة الحساب: لا إعادة كل 30 ثانية؛ الحفظ باقٍ في المتصفح */
+				blocked = true;
+				return r.json().catch(function () { return {}; }).then(function (j) { say(j.message || C.i18n.failed); throw new Error('quota'); });
+			}
 			if (!r.ok) { throw new Error('http'); }
 			return r.json().then(function (info) {
 				if (info.hash !== h) { throw new Error('hash'); }

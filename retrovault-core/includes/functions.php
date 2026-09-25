@@ -232,6 +232,20 @@ function rv_get_user_ratings( $user_id = 0 ) {
 	return Ratings::for_user( $user_id ? $user_id : get_current_user_id() );
 }
 
+/**
+ * مساحة الحفظ السحابي للعضو.
+ *
+ * @param int $user_id رقم العضو (الافتراضي: الحالي).
+ * @return array{used:int,quota:int} بالبايت.
+ */
+function rv_saves_usage( $user_id = 0 ) {
+	$user_id = $user_id ? $user_id : get_current_user_id();
+	return array(
+		'used'  => Saves::usage( $user_id ),
+		'quota' => Saves::quota(),
+	);
+}
+
 /** رابط صفحة «حسابي». */
 function rv_account_url() {
 	return Account::url();

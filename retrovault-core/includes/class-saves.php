@@ -58,6 +58,67 @@ final class Saves {
 		return (int) min( wp_max_upload_size(), max( 1, (int) Settings::get( 'save_max_mb' ) ) * MB_IN_BYTES );
 	}
 
+	/** مساحة حفظات العضو كلها، ولا تقل عن حفظ واحد بأقصى حجم. */
+	public static function quota() {
+		return (int) max( self::max_bytes() + self::SHOT_MAX, max( 5, (int) Settings::get( 'save_quota_mb' ) ) * MB_IN_BYTES );
+	}
+
+	/**
+	 * ما تشغله حفظات العضو: الحالات ولقطاتها وحفظ اللعبة الداخلي.
+	 *
+	 * @param int        $user_id رقم العضو.
+	 * @param array|null $all     الحفظات (إن كانت مقروءة).
+	 */
+	public static function usage( $user_id, $all = null ) {
+		$used = 0;
+		foreach ( null === $all ? self::entries( $user_id ) : $all as $game_id => $record ) {
+			foreach ( $record['states'] as $entry ) {
+				$used += self::entry_bytes( $user_id, $game_id, $entry );
+			}
+			if ( $record['sram'] ) {
+				$used += (int) $record['sram']['size'];
+			}
+		}
+		return $used;
+	}
+
+	/**
+	 * حجم حالة ولقطتها (حفظات ما قبل 1.13 لم تسجّل حجم اللقطة، فيُقرأ من الملف).
+	 *
+	 * @param int   $user_id رقم العضو.
+	 * @param int   $game_id رقم اللعبة.
+	 * @param array $entry   الحالة.
+	 */
+	private static function entry_bytes( $user_id, $game_id, $entry ) {
+		$bytes = (int) $entry['size'];
+		if ( isset( $entry['shot_size'] ) ) {
+			return $bytes + (int) $entry['shot_size'];
+		}
+		if ( ! empty( $entry['shot'] ) ) {
+			$shot   = self::path( $user_id, $game_id, $entry['token'], 'shot' );
+			$bytes += ( $shot && file_exists( $shot ) ) ? (int) filesize( $shot ) : 0;
+		}
+		return $bytes;
+	}
+
+	/**
+	 * @param int $used المستخدم لو قُبل الحفظ.
+	 * @return \WP_Error
+	 */
+	private static function quota_error( $used ) {
+		return new \WP_Error(
+			'rv_save_quota',
+			sprintf(
+				/* translators: 1: used size, 2: quota */
+				__( 'امتلأت مساحة الحفظ في حسابك (%1$s من %2$s). احذف حفظات لم تعد تحتاجها من صفحة «حسابي» ثم احفظ مرة أخرى.', 'retrovault-core' ),
+				// عزل الحجم («5.3 MB») كي لا ينقلب داخل النص العربي.
+				"\u{2068}" . size_format( $used, 1 ) . "\u{2069}",
+				"\u{2068}" . size_format( self::quota() ) . "\u{2069}"
+			),
+			array( 'status' => 413 )
+		);
+	}
+
 	/**
 	 * @param mixed $token رمز الحالة.
 	 */
@@ -248,14 +309,27 @@ final class Saves {
 		return self::with_lock( $user_id, static function () use ( $user_id, $game_id, $state_tmp, $shot_tmp, $shot_mime, $encoding, $core ) {
 			$game  = Games::get( $game_id );
 			$entry = array(
-				'token' => strtolower( wp_generate_password( 16, false ) ),
-				'time'  => time(),
-				'size'  => (int) filesize( $state_tmp ),
-				'enc'   => 'gzip' === $encoding ? 'gzip' : 'raw',
-				'shot'  => $shot_tmp ? $shot_mime : '',
-				'core'  => $core,
-				'ver'   => $game ? $game['version'] : '',
+				'token'     => strtolower( wp_generate_password( 16, false ) ),
+				'time'      => time(),
+				'size'      => (int) filesize( $state_tmp ),
+				'enc'       => 'gzip' === $encoding ? 'gzip' : 'raw',
+				'shot'      => $shot_tmp ? $shot_mime : '',
+				'shot_size' => $shot_tmp ? (int) filesize( $shot_tmp ) : 0,
+				'core'      => $core,
+				'ver'       => $game ? $game['version'] : '',
 			);
+
+			// المساحة بعد الحفظ: الأقدم الذي سيخرج من الخانات لا يُحسب.
+			$all     = self::entries( $user_id );
+			$states  = isset( $all[ $game_id ] ) ? $all[ $game_id ]['states'] : array();
+			$leaving = 0;
+			foreach ( array_slice( $states, self::slots() - 1 ) as $old ) {
+				$leaving += self::entry_bytes( $user_id, $game_id, $old );
+			}
+			$used = self::usage( $user_id, $all ) - $leaving + $entry['size'] + $entry['shot_size'];
+			if ( $used > self::quota() ) {
+				return self::quota_error( $used );
+			}
 
 			self::user_dir( $user_id, true );
 			if ( ! self::move( $state_tmp, self::path( $user_id, $game_id, $entry['token'], 'state' ) ) ) {
@@ -333,6 +407,10 @@ final class Saves {
 			$current_hash = $old ? (string) $old['hash'] : '';
 			if ( null !== $expected_hash && $current_hash !== $expected_hash && $current_hash !== $hash ) {
 				return new \WP_Error( 'rv_sram_conflict', __( 'تغيّر حفظ هذه اللعبة على جهاز آخر. أعد فتح اللعبة للمزامنة.', 'retrovault-core' ), array( 'status' => 409 ) );
+			}
+			$used = self::usage( $user_id, $all ) - ( $old ? (int) $old['size'] : 0 ) + (int) filesize( $tmp );
+			if ( $used > self::quota() ) {
+				return self::quota_error( $used );
 			}
 			if ( $old && $current_hash === $hash ) {
 				return self::describe_sram( $old );

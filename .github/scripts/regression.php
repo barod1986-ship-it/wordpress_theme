@@ -228,4 +228,72 @@ for ( $i = 9; $i >= 0; $i-- ) {
 	$days[ gmdate( 'Y-m-d', time() - $i * DAY_IN_SECONDS ) ] = 1;
 }
 rv_assert( array( 7 ) === array_values( \RetroVault\Analytics::weekly( $days ) ), 'weekly chart bars are whole weeks ending today' );
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email and stats regressions passed.' );
+// Security limits (1.13): IPv6 by network, per-member save quota, sign-up and password-guess limits, CSV cells.
+$saved_settings = get_option( 'retrovault_settings' );
+$_SERVER['REMOTE_ADDR'] = '2001:db8:1:2:aaaa::1';
+$v6a = \RetroVault\Stats::client_ip();
+$_SERVER['REMOTE_ADDR'] = '2001:db8:1:2:bbbb:cccc:dddd:eeee';
+rv_assert( $v6a === \RetroVault\Stats::client_ip() && '2001:db8:1:3::1' !== $v6a, 'IPv6 visitors are counted by their /64 network' );
+$_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+rv_assert( '203.0.113.7' === \RetroVault\Stats::client_ip(), 'IPv4 addresses are kept as they are' );
+
+$quota_user = wp_insert_user( array( 'user_login' => 'regquota', 'user_pass' => wp_generate_password(), 'user_email' => 'regquota@example.com', 'role' => 'subscriber' ) );
+update_option( 'retrovault_settings', array_merge( (array) get_option( 'retrovault_settings', array() ), array( 'save_max_mb' => 1, 'save_quota_mb' => 5, 'save_slots' => 1 ) ) );
+\RetroVault\Settings::flush_cache();
+rv_assert( 5 * MB_IN_BYTES === \RetroVault\Saves::quota(), 'the member save quota follows the setting' );
+$blob = static function ( $bytes ) {
+	$tmp = wp_tempnam( 'rv-quota' );
+	file_put_contents( $tmp, random_bytes( $bytes ) );
+	return $tmp;
+};
+$games = get_posts( array( 'post_type' => 'rv_game', 'post_status' => 'publish', 'posts_per_page' => 3, 'fields' => 'ids' ) );
+rv_assert( 3 === count( $games ), 'quota fixtures have three games' );
+rv_assert( ! is_wp_error( \RetroVault\Saves::add_state( $quota_user, $games[0], $blob( 900 * KB_IN_BYTES ), null, '', 'raw', 'fceumm' ) ), 'a save within the member quota is stored' );
+rv_assert( ! is_wp_error( \RetroVault\Saves::put_sram( $quota_user, $games[1], $blob( 3500 * KB_IN_BYTES ), 'raw', 'aaa', '' ) ), 'game-save sync within the quota is stored' );
+$over = \RetroVault\Saves::add_state( $quota_user, $games[2], $blob( 900 * KB_IN_BYTES ), null, '', 'raw', 'fceumm' );
+rv_assert( is_wp_error( $over ) && 'rv_save_quota' === $over->get_error_code(), 'saves beyond the member quota are refused' );
+$replace = \RetroVault\Saves::add_state( $quota_user, $games[0], $blob( 900 * KB_IN_BYTES ), null, '', 'raw', 'fceumm' );
+rv_assert( ! is_wp_error( $replace ), 'a save that replaces the oldest one in a full slot still fits' );
+$sram = \RetroVault\Saves::put_sram( $quota_user, $games[2], $blob( MB_IN_BYTES ), 'raw', 'bbb', '' );
+rv_assert( is_wp_error( $sram ) && 'rv_save_quota' === $sram->get_error_code(), 'game-save sync respects the quota too' );
+rv_assert( \RetroVault\Saves::usage( $quota_user ) <= \RetroVault\Saves::quota(), 'stored saves stay within the quota' );
+\RetroVault\Saves::delete_all( $quota_user );
+update_option( 'retrovault_settings', $saved_settings );
+\RetroVault\Settings::flush_cache();
+
+// Login attempts: five wrong passwords lock that name for this connection, even with the right password.
+$locked_user = wp_insert_user( array( 'user_login' => 'reglocked', 'user_pass' => 'right-password-1', 'user_email' => 'reglocked@example.com', 'role' => 'subscriber' ) );
+for ( $i = 0; $i < 5; $i++ ) {
+	wp_authenticate( 'reglocked', 'wrong-password' );
+}
+$locked = wp_authenticate( 'reglocked', 'right-password-1' );
+rv_assert( is_wp_error( $locked ) && 'rv_login_locked' === $locked->get_error_code(), 'five wrong passwords lock the login for this connection' );
+$_SERVER['REMOTE_ADDR'] = '198.51.100.9';
+rv_assert( wp_authenticate( 'reglocked', 'right-password-1' ) instanceof WP_User, 'the same account still logs in from another connection' );
+$_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+\RetroVault\Guard::clear( 'login', 'reglocked' );
+rv_assert( wp_authenticate( 'reglocked', 'right-password-1' ) instanceof WP_User, 'the lock lifts once cleared' );
+
+// Account settings: five wrong current passwords stop further guesses.
+for ( $i = 0; $i < 5; $i++ ) {
+	\RetroVault\Account::update_settings( get_userdata( $locked_user ), array( 'name' => 'Locked', 'email' => 'other@example.com', 'current_password' => 'wrong' ) );
+}
+$guess = \RetroVault\Account::update_settings( get_userdata( $locked_user ), array( 'name' => 'Locked', 'email' => 'other@example.com', 'current_password' => 'right-password-1' ) );
+rv_assert( isset( $guess['errors']['current_password'] ) && 'reglocked@example.com' === get_userdata( $locked_user )->user_email, 'current-password guesses in account settings are limited' );
+
+// Instant sign-up: a handful of accounts per connection per hour.
+$GLOBALS['pagenow'] = 'wp-login.php';
+$_REQUEST['action'] = 'register';
+for ( $i = 0; $i < 5; $i++ ) {
+	\RetroVault\Guard::fail( 'signup', '' );
+}
+$_POST  = array( 'rv_pass' => 'long-enough-1' );
+$signup = register_new_user( 'reglimit', 'reglimit@example.com' );
+rv_assert( is_wp_error( $signup ) && in_array( 'rv_signup_limit', $signup->get_error_codes(), true ) && ! username_exists( 'reglimit' ), 'instant sign-ups from one connection are limited per hour' );
+\RetroVault\Guard::clear( 'signup', '' );
+$_POST = array();
+unset( $_REQUEST['action'] );
+$GLOBALS['pagenow'] = $pagenow_before;
+
+rv_assert( "'=HYPERLINK(1)" === \RetroVault\Analytics::csv_text( '=HYPERLINK(1)' ) && 'Pixel Quest' === \RetroVault\Analytics::csv_text( 'Pixel Quest' ), 'CSV export cells cannot start a spreadsheet formula' );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats and limit regressions passed.' );

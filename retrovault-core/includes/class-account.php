@@ -75,12 +75,16 @@ final class Account {
 		}
 	}
 
-	/** الزائر يُحوَّل لتسجيل الدخول ثم يعود للصفحة. */
+	/** الزائر يُحوَّل لتسجيل الدخول ثم يعود للصفحة. والصفحة لا تُعرض داخل إطار من موقع آخر. */
 	public static function guard() {
-		if ( self::is_page() && ! is_user_logged_in() ) {
+		if ( ! self::is_page() ) {
+			return;
+		}
+		if ( ! is_user_logged_in() ) {
 			wp_safe_redirect( wp_login_url( self::url() ) );
 			exit;
 		}
+		Guard::no_framing();
 	}
 
 	/** حفظ «إعدادات الحساب»: عند النجاح تحويل للصفحة نفسها برسالة، وعند الخطأ تُعرض بالأخطاء. */
@@ -164,7 +168,11 @@ final class Account {
 			$current = (string) $input['current_password'];
 			if ( '' === $current ) {
 				$errors['current_password'] = __( 'اكتب كلمة مرورك الحالية لتغيير البريد أو كلمة المرور.', 'retrovault-core' );
+			} elseif ( Guard::blocked( 'current-password', (string) $user->ID, 5 ) ) {
+				// من فتح جلسة غيره (جهاز مشترك مثلاً) لا يجرّب كلمات المرور هنا بلا حد.
+				$errors['current_password'] = __( 'محاولات خاطئة كثيرة. انتظر 15 دقيقة ثم حاول مرة أخرى.', 'retrovault-core' );
 			} elseif ( ! wp_check_password( $current, $user->user_pass, $user->ID ) ) {
+				Guard::fail( 'current-password', (string) $user->ID );
 				$errors['current_password'] = __( 'كلمة المرور الحالية غير صحيحة.', 'retrovault-core' );
 			}
 		}

@@ -2973,6 +2973,32 @@ img.is-pixel {
 	margin: 4px 0 0;
 }
 
+/* مساحة الحفظ السحابي المستخدمة */
+.save-space {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 12px;
+	margin: -6px 0 16px;
+	color: var(--ink-soft);
+	font-size: var(--fs-14);
+}
+
+.save-space label {
+	color: var(--ink);
+	font-weight: 500;
+}
+
+.save-space meter {
+	width: min(100%, 14rem);
+	height: 10px;
+}
+
+.save-space.is-full span {
+	color: var(--ink);
+	font-weight: 500;
+}
+
 .save-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
