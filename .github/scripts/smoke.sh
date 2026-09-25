@@ -240,6 +240,12 @@ check "game file opened in a browser tab" 403 "$(status -b "$TMP/player.jar" -H 
 check "game file requested by another site" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
 check "same-site subdomain cannot request the ROM" 403 "$(status -b "$TMP/player.jar" -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' "$rom")"
 check "ROM request with no source headers" 403 "$(status -b "$TMP/player.jar" "$rom")"
+# WordPress Playground لا يوصل Sec-Fetch ولا Referer إلى PHP؛ المشغّل يرسل ترويسته الخاصة.
+check "Playground-style request: player header and its session" 200 "$(status -b "$TMP/player.jar" -H 'X-RetroVault-Player: 1' "$rom")"
+check "player header without the browser session" 403 "$(status -H 'X-RetroVault-Player: 1' "$rom")"
+check "player header cannot override a cross-site request" 403 "$(status -b "$TMP/player.jar" -H 'X-RetroVault-Player: 1' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: cross-site' "$rom")"
+check "player header cannot open the file as a page" 403 "$(status -b "$TMP/player.jar" -H 'X-RetroVault-Player: 1' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$rom")"
+check "another site cannot get a preflight for the player header" 405 "$(status -X OPTIONS -H 'Origin: https://other.example' -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: x-retrovault-player' "$rom")"
 check "legacy player with same-origin referer" 200 "$(status -b "$TMP/player.jar" -e "$BASE/games/pixel-quest/play/" "$rom")"
 check "legacy request with a foreign referer" 403 "$(status -b "$TMP/player.jar" -e 'https://other.example/player/' "$rom")"
 check "unsupported ROM method" 405 "$(status -b "$TMP/player.jar" "${xhr[@]}" -X POST "$rom")"

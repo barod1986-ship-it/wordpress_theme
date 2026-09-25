@@ -386,7 +386,9 @@ final class Roms {
 	/**
 	 * هل الطلب من المشغّل؟ المتصفحات الحديثة ترسل ترويسات Sec-Fetch: طلب EmulatorJS يكون
 	 * mode=cors من نفس الموقع، أما فتح الرابط في المتصفح أو «حفظ باسم» فـ navigate، وطلب صفحة موقع
-	 * آخر فـ cross-site. عند غيابها يلزم Origin أو Referer مطابق، مع رمز جلسة المتصفح.
+	 * آخر فـ cross-site. عند غيابها (WordPress Playground لا يوصلها إلى PHP، ولا Referer) تكفي ترويسة
+	 * المشغّل X-RetroVault-Player: صفحة موقع آخر لا تضيفها دون إذن CORS، ومسار الملف لا يجيب طلب
+	 * OPTIONS. وإلا فيلزم Origin أو Referer مطابق. ومع كل ذلك رمز جلسة المتصفح.
 	 */
 	private static function from_player() {
 		$get  = static function ( $name ) {
@@ -400,6 +402,9 @@ final class Roms {
 		}
 		if ( '' !== $site ) {
 			return 'same-origin' === $site && in_array( $mode, array( 'cors', 'same-origin' ), true ) && in_array( $dest, array( '', 'empty' ), true );
+		}
+		if ( '1' === $get( 'HTTP_X_RETROVAULT_PLAYER' ) ) {
+			return true;
 		}
 		$source = isset( $_SERVER['HTTP_ORIGIN'] ) ? wp_unslash( $_SERVER['HTTP_ORIGIN'] ) : ( isset( $_SERVER['HTTP_REFERER'] ) ? wp_unslash( $_SERVER['HTTP_REFERER'] ) : '' );
 		$origin = wp_parse_url( $source );
@@ -474,6 +479,11 @@ final class Roms {
 		);
 	}
 
+	/** WordPress Playground: ووردبريس يعمل داخل المتصفح (PHP.wasm) بإضافاته الخاصة في /internal/shared. */
+	private static function in_playground() {
+		return isset( $GLOBALS['_playground_consts'] ) || is_file( '/internal/shared/mu-plugins/0-playground.php' );
+	}
+
 	/** أول لعبة منشورة (بلا كلمة مرور) ملفها في المجلد المحمي. */
 	private static function health_game() {
 		$ids = get_posts(
@@ -518,6 +528,11 @@ final class Roms {
 			'actions'     => '',
 			'test'        => 'retrovault_roms',
 		);
+		if ( self::in_playground() ) {
+			// لا خادم هنا: PHP يعمل داخل المتصفح، والطلب من الموقع إلى نفسه لا يصل إليه.
+			$result['description'] = '<p>' . esc_html__( 'الموقع يعمل في WordPress Playground داخل المتصفح، فلا يوجد خادم يُفحص. المشغّل يعمل هنا بترويسته الخاصة.', 'retrovault-core' ) . '</p>';
+			return $result;
+		}
 		$game = self::health_game();
 		if ( ! $game ) {
 			$result['description'] = '<p>' . esc_html__( 'لا توجد بعد لعبة منشورة بملف مرفوع إلى الموقع لفحصها.', 'retrovault-core' ) . '</p>';
