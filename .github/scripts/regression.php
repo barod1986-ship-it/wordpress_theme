@@ -86,4 +86,40 @@ $summary = Saves::summary( $author, $game_id );
 rv_assert( 1 === count( $summary['states'] ) && 'bbbb-11' === $summary['sram']['hash'], 'adding a state preserves SRAM' );
 wp_delete_file( $tmp );
 wp_set_current_user( 1 );
-WP_CLI::success( 'Security, REST and save-persistence regressions passed.' );
+
+// Signed ROM URLs must be scoped to this browser, account, game and time window.
+$cookie = Roms::cookie_name();
+$_COOKIE[ $cookie ] = str_repeat( 'a', 64 );
+$window = (int) floor( time() / Roms::WINDOW );
+$token = Roms::token( $game_id, $window );
+rv_assert( Roms::valid_token( $game_id, $token ), 'current player session token is accepted' );
+rv_assert( Roms::valid_token( $game_id, Roms::token( $game_id, $window - 1 ) ), 'previous token window allows an already open player' );
+rv_assert( ! Roms::valid_token( $game_id, Roms::token( $game_id, $window - 2 ) ), 'expired ROM links are rejected' );
+rv_assert( ! Roms::valid_token( $game_id + 1, $token ), 'ROM token cannot access another game' );
+$_COOKIE[ $cookie ] = str_repeat( 'b', 64 );
+rv_assert( ! Roms::valid_token( $game_id, $token ), 'ROM token cannot be shared with another browser session' );
+unset( $_COOKIE[ $cookie ] );
+rv_assert( ! Roms::valid_token( $game_id, $token ) && ! Roms::valid_token( $game_id, '' ), 'missing player cookie fails closed' );
+$_COOKIE[ $cookie ] = str_repeat( 'a', 64 );
+wp_set_current_user( $author );
+rv_assert( ! Roms::valid_token( $game_id, $token ), 'switching accounts invalidates the earlier ROM token' );
+wp_set_current_user( 1 );
+unset( $_COOKIE[ $cookie ] );
+
+// A database error during protection must not lose the original attachment or expose a fallback.
+$broken = rv_test_attachment( 'protection-failure.nes', 1 );
+$original = get_attached_file( $broken );
+$reject_path = static function ( $check, $id, $key ) use ( $broken ) {
+	return (int) $id === (int) $broken && '_wp_attached_file' === $key ? false : $check;
+};
+add_filter( 'update_post_metadata', $reject_path, 20, 3 );
+rv_assert( ! Roms::protect( $broken ), 'attachment path persistence failure rejects protection' );
+remove_filter( 'update_post_metadata', $reject_path, 20 );
+rv_assert( get_attached_file( $broken ) === $original && file_exists( $original ), 'failed protection preserves the original attachment file' );
+$meta = \RetroVault\Game_Meta::values( $game_id );
+$meta['rom_id'] = $broken;
+$meta['rom_url'] = 'https://example.com/unprotected-fallback.nes';
+$rom = \RetroVault\Games::rom( $game_id, $meta );
+rv_assert( '' === $rom['url'] && '' === $rom['raw_url'], 'failed attachment protection cannot fall back to any public URL' );
+rv_assert( ! Roms::is_protected_path( dirname( get_attached_file( $owned ) ) . '/../' . basename( $original ) ), 'a directory prefix alone never establishes protection' );
+WP_CLI::success( 'Security, REST, ROM authorization and save-persistence regressions passed.' );

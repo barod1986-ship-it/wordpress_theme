@@ -4,8 +4,8 @@
  *
  * - ملف اللعبة المرفوع يُنقل إلى uploads/retrovault-roms/ باسم فيه لاحقة عشوائية. في المجلد ملف
  *   .htaccess يمنع فتح أي ملف مباشرة (Apache وLiteSpeed)، والاسم العشوائي لا يظهر لأحد فلا يُخمَّن
- *   (يحمي على nginx أيضاً). ويصبح المرفق «خاصاً» فلا يظهر في واجهة REST ولا في صفحة المرفق.
- * - المشغّل يطلب الملف من /games/{slug}/rom/{رمز}/{اسم الملف}: رمز موقّع يتغير كل 6 ساعات، ويُرفض
+ *   (nginx يحتاج قاعدة منع صريحة). ويصبح المرفق «خاصاً» فلا يظهر في واجهة REST ولا في صفحة المرفق.
+ * - المشغّل يطلب الملف من /games/{slug}/rom/{رمز}/{اسم الملف}: رمز موقّع مرتبط بجلسة المتصفح يتغير كل 6 ساعات، ويُرفض
  *   الطلب إن فُتح الرابط في المتصفح مباشرة أو جاء من موقع آخر (ترويسات Sec-Fetch).
  * - زر «تنزيل الملف» (للألعاب التي يسمح المدير بتنزيلها) يرسل الملف نفسه دون كشف مكانه.
  *
@@ -30,6 +30,43 @@ final class Roms {
 
 	/** مدة «نافذة» الرمز بالثواني: الرمز صالح في نافذته والتي تليها (6 إلى 12 ساعة). */
 	const WINDOW = 21600;
+
+	/** A separate HttpOnly cookie per site, used only to bind player links to this browser. */
+	public static function cookie_name() {
+		return 'rv_player_' . get_current_blog_id();
+	}
+
+	private static function session() {
+		$value = isset( $_COOKIE[ self::cookie_name() ] ) ? wp_unslash( $_COOKIE[ self::cookie_name() ] ) : '';
+		return is_string( $value ) && preg_match( '/^[A-Za-z0-9]{64}$/D', $value ) ? $value : '';
+	}
+
+	/** Issue the player cookie before rendering its signed URL; file requests never issue one. */
+	public static function prepare_session() {
+		if ( '' !== self::session() ) {
+			return true;
+		}
+		if ( headers_sent() ) {
+			return false;
+		}
+		$value = wp_generate_password( 64, false, false );
+		$path  = (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH );
+		$ok    = setcookie(
+			self::cookie_name(),
+			$value,
+			array(
+				'expires'  => 0,
+				'path'     => $path ? $path : '/',
+				'secure'   => is_ssl(),
+				'httponly' => true,
+				'samesite' => 'Lax',
+			)
+		);
+		if ( $ok ) {
+			$_COOKIE[ self::cookie_name() ] = $value;
+		}
+		return $ok;
+	}
 
 	public static function init() {
 		add_filter( 'add_post_metadata', array( __CLASS__, 'guard_meta' ), 10, 4 );
@@ -94,14 +131,20 @@ final class Roms {
 			return false;
 		}
 		$path = get_attached_file( $attachment_id );
-		if ( ! $path || ! file_exists( $path ) ) {
+		if ( ! $path || ! is_file( $path ) || ! is_readable( $path ) ) {
 			return false; // الملف ليس على هذا الخادم (مكتبة وسائط على CDN مثلاً).
 		}
-		if ( ! self::is_protected_path( $path ) ) {
-			$dir = self::dir();
-			if ( ! $dir ) {
+		$dir = self::dir();
+		if ( ! $dir ) {
+			return false;
+		}
+		if ( 'private' !== get_post_status( $attachment_id ) ) {
+			$result = wp_update_post( array( 'ID' => $attachment_id, 'post_status' => 'private' ), true );
+			if ( is_wp_error( $result ) || ! $result ) {
 				return false;
 			}
+		}
+		if ( ! self::is_protected_path( $path ) ) {
 			$name = wp_basename( $path );
 			$ext  = strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
 			$base = sanitize_file_name( (string) pathinfo( $name, PATHINFO_FILENAME ) );
@@ -109,18 +152,13 @@ final class Roms {
 			if ( ! @rename( $path, $new ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
 				return false;
 			}
-			update_attached_file( $attachment_id, $new );
+			if ( ! update_attached_file( $attachment_id, $new ) ) {
+				@rename( $new, $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+				return false;
+			}
 			if ( '' === (string) get_post_meta( $attachment_id, self::NAME, true ) ) {
 				update_post_meta( $attachment_id, self::NAME, $name );
 			}
-		}
-		if ( 'private' !== get_post_status( $attachment_id ) ) {
-			wp_update_post(
-				array(
-					'ID'          => $attachment_id,
-					'post_status' => 'private',
-				)
-			);
 		}
 		return true;
 	}
@@ -172,8 +210,11 @@ final class Roms {
 			'index.php' => "<?php\n// Silence is golden.\n",
 		);
 		foreach ( $files as $file => $content ) {
-			if ( ! file_exists( "{$dir}/{$file}" ) ) {
-				file_put_contents( "{$dir}/{$file}", $content ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$target = "{$dir}/{$file}";
+			if ( ! is_file( $target ) || $content !== @file_get_contents( $target ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				if ( strlen( $content ) !== @file_put_contents( $target, $content, LOCK_EX ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+					return null;
+				}
 			}
 		}
 		return $dir;
@@ -187,7 +228,9 @@ final class Roms {
 			return false;
 		}
 		$uploads = wp_upload_dir( null, false );
-		return 0 === strpos( wp_normalize_path( $path ), wp_normalize_path( trailingslashit( $uploads['basedir'] ) . self::DIR . '/' ) );
+		$real = realpath( $path );
+		$dir  = realpath( trailingslashit( $uploads['basedir'] ) . self::DIR );
+		return $real && $dir && 0 === strpos( wp_normalize_path( $real ), trailingslashit( wp_normalize_path( $dir ) ) );
 	}
 
 	/**
@@ -208,10 +251,15 @@ final class Roms {
 	 * @param int|null $window  النافذة (الحالية افتراضياً).
 	 */
 	public static function token( $game_id, $window = null ) {
+		$session = self::session();
+		if ( '' === $session ) {
+			return '';
+		}
 		if ( null === $window ) {
 			$window = (int) floor( time() / self::WINDOW );
 		}
-		return substr( hash_hmac( 'sha256', 'rv-rom|' . (int) $game_id . '|' . (int) $window, wp_salt( 'auth' ) ), 0, 32 );
+		$identity = $session . '|' . get_current_user_id() . '|' . wp_get_session_token();
+		return substr( hash_hmac( 'sha256', 'rv-rom|' . (int) $game_id . '|' . (int) $window . '|' . $identity, wp_salt( 'auth' ) ), 0, 32 );
 	}
 
 	/**
@@ -219,6 +267,9 @@ final class Roms {
 	 * @param string $token   الرمز من الرابط.
 	 */
 	public static function valid_token( $game_id, $token ) {
+		if ( '' === self::session() || ! is_string( $token ) || ! preg_match( '/^[a-f0-9]{32}$/D', $token ) ) {
+			return false;
+		}
 		$now = (int) floor( time() / self::WINDOW );
 		foreach ( array( $now, $now - 1 ) as $window ) {
 			if ( hash_equals( self::token( $game_id, $window ), (string) $token ) ) {
@@ -266,14 +317,15 @@ final class Roms {
 		if ( ! $path || ! is_readable( $path ) || ( 'publish' !== get_post_status( $post ) && ! current_user_can( 'edit_post', $post->ID ) ) ) {
 			self::deny( 404 );
 		}
-		$token = (string) strtok( (string) get_query_var( 'rv_rom' ), '/' );
+		$requested = get_query_var( 'rv_rom' );
+		$token = is_string( $requested ) ? (string) strtok( $requested, '/' ) : '';
 		if ( post_password_required( $post ) || ! self::valid_token( $post->ID, $token ) || ! self::from_player() ) {
 			self::deny( 403 );
 		}
 		self::send(
 			$path,
 			array(
-				'Cache-Control: private, max-age=' . self::WINDOW,
+				'Cache-Control: private, no-store',
 				'Cross-Origin-Resource-Policy: same-origin',
 			)
 		);
@@ -286,9 +338,12 @@ final class Roms {
 	 * @return bool false إن لم يكن الملف محمياً (فيُحوَّل لرابطه كالمعتاد).
 	 */
 	public static function download( $game ) {
+		if ( empty( $game['rom']['id'] ) ) {
+			return false; // An explicitly configured external URL.
+		}
 		$path = empty( $game['rom']['protected'] ) ? '' : get_attached_file( $game['rom']['id'] );
 		if ( ! $path || ! is_readable( $path ) ) {
-			return false;
+			self::deny( 404 ); // Never redirect to the physical attachment URL after a failure.
 		}
 		$name  = $game['rom']['file'];
 		$ascii = trim( (string) preg_replace( '/[^A-Za-z0-9._-]+/', '-', $name ), '-' );
@@ -305,7 +360,7 @@ final class Roms {
 	/**
 	 * هل الطلب من المشغّل؟ المتصفحات الحديثة ترسل ترويسات Sec-Fetch: طلب EmulatorJS يكون
 	 * mode=cors من نفس الموقع، أما فتح الرابط في المتصفح أو «حفظ باسم» فـ navigate، وطلب صفحة موقع
-	 * آخر فـ cross-site. المتصفحات القديمة لا ترسلها فيُكتفى بالرمز.
+	 * آخر فـ cross-site. عند غيابها يلزم Origin أو Referer مطابق، مع رمز جلسة المتصفح.
 	 */
 	private static function from_player() {
 		$get  = static function ( $name ) {
@@ -317,7 +372,17 @@ final class Roms {
 		if ( 'navigate' === $mode || in_array( $dest, array( 'document', 'iframe', 'frame', 'embed', 'object' ), true ) ) {
 			return false;
 		}
-		return '' === $site || 'same-origin' === $site;
+		if ( '' !== $site ) {
+			return 'same-origin' === $site && in_array( $mode, array( 'cors', 'same-origin' ), true ) && in_array( $dest, array( '', 'empty' ), true );
+		}
+		$source = isset( $_SERVER['HTTP_ORIGIN'] ) ? wp_unslash( $_SERVER['HTTP_ORIGIN'] ) : ( isset( $_SERVER['HTTP_REFERER'] ) ? wp_unslash( $_SERVER['HTTP_REFERER'] ) : '' );
+		$origin = wp_parse_url( $source );
+		$home   = wp_parse_url( home_url( '/' ) );
+		if ( ! is_array( $origin ) || ! isset( $origin['scheme'], $origin['host'] ) || isset( $origin['user'] ) || isset( $origin['pass'] ) ) {
+			return false;
+		}
+		$port = static function ( $url ) { return isset( $url['port'] ) ? (int) $url['port'] : ( 'https' === strtolower( $url['scheme'] ) ? 443 : 80 ); };
+		return strtolower( $origin['scheme'] ) === strtolower( $home['scheme'] ) && strtolower( $origin['host'] ) === strtolower( $home['host'] ) && $port( $origin ) === $port( $home );
 	}
 
 	/**

@@ -85,11 +85,22 @@
 	function gameAsset(event) {
 		var req = event.request;
 		var key = gameKey(req.url);
+		var url = new URL(req.url);
+		var protectedRom = url.origin === self.location.origin && (ROM_PATH.test(url.pathname) || ROM_QUERY.test(url.search));
+		if (protectedRom && (['cors', 'same-origin'].indexOf(req.mode) === -1 || req.destination)) {
+			return Promise.resolve(new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } }));
+		}
 		if (event.clientId) {
 			var seen = gameRequests[event.clientId] || (gameRequests[event.clientId] = []);
 			if (seen.indexOf(key) === -1) { seen.push(key); }
 		}
-		/* بلا إنترنت، أو رابط انتهى رمزه (صفحة مفتوحة منذ ساعات): النسخة المحفوظة إن وُجدت */
+		/* Network failures can use the offline copy; an explicit server denial must win. */
+		function denied(cache, response) {
+			if ([401, 403, 404, 410].indexOf(response.status) !== -1) {
+				return cache.delete(key).catch(function () {}).then(function () { return response; });
+			}
+			return response;
+		}
 		function saved(cache, fallback, headOnly) {
 			return cache.match(key).then(function (hit) {
 				if (!hit) {
@@ -102,7 +113,7 @@
 			if (req.method === 'HEAD') {
 				return fetch(req).then(function (res) {
 					if (!res.ok) {
-						return saved(cache, res, true);
+						return denied(cache, res);
 					}
 					/* EmulatorJS يتحقق بطلب HEAD ثم يستخدم نسخته المخزّنة دون تنزيل؛
 					 * نجلب الملف في الخلفية مرة واحدة ليبقى متاحاً بدون إنترنت. */
@@ -121,7 +132,7 @@
 			}
 			return fetch(req).then(function (res) {
 				if (!cacheable(res)) {
-					return saved(cache, res, false);
+					return denied(cache, res);
 				}
 				return cache.put(key, res.clone()).catch(function () {}).then(function () { return res; });
 			}).catch(function () {

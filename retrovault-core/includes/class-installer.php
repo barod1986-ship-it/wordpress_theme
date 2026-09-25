@@ -45,6 +45,7 @@ final class Installer {
 	 * 5: جدول الإحصائيات اليومية و«الرائجة». 6: (النسخة الإنجليزية معطّلة).
 	 * 7: أُزيلت النسخة الإنجليزية وتُحذف بياناتها المتبقية.
 	 * 8: حماية ملفات الألعاب: نقلها للمجلد المحمي، وقاعدة رابط /rom/ الجديدة.
+	 * 9: إعادة التحقق من حماية المرفقات وإصلاح ملفات منع الوصول المباشر.
 	 */
 	public static function maybe_upgrade() {
 		if ( get_option( 'retrovault_db_version' ) === RETROVAULT_DB_VERSION ) {
@@ -64,8 +65,10 @@ final class Installer {
 			self::remove_english_data();
 		}
 		if ( version_compare( $from, '8', '<' ) ) {
-			Roms::protect_all();
 			flush_rewrite_rules( false );
+		}
+		if ( version_compare( $from, '9', '<' ) ) {
+			Roms::protect_all();
 		}
 		if ( version_compare( $from, '5', '<' ) ) {
 			self::backfill();
