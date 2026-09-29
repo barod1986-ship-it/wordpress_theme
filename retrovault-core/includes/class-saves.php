@@ -38,6 +38,7 @@ final class Saves {
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'routes' ) );
 		add_action( 'delete_user', array( __CLASS__, 'delete_all' ) );
+		add_action( 'before_delete_post', array( __CLASS__, 'on_delete_post' ) );
 	}
 
 	public static function enabled() {
@@ -459,6 +460,53 @@ final class Saves {
 	}
 
 	/**
+	 * حذف كل حفظات لعبة (الحالات وحفظ اللعبة الداخلي) من حساب عضو.
+	 *
+	 * @param int $user_id رقم العضو.
+	 * @param int $game_id رقم اللعبة.
+	 * @return bool|\WP_Error
+	 */
+	public static function delete_game( $user_id, $game_id ) {
+		return self::with_lock( $user_id, static function () use ( $user_id, $game_id ) {
+			$all = self::entries( $user_id );
+			if ( ! isset( $all[ $game_id ] ) ) {
+				return false;
+			}
+			$record = $all[ $game_id ];
+			unset( $all[ $game_id ] );
+			if ( ! self::store( $user_id, $all ) ) { return self::write_error(); }
+			foreach ( $record['states'] as $entry ) {
+				self::unlink_entry( $user_id, $game_id, $entry, array( 'state', 'shot' ) );
+			}
+			if ( $record['sram'] ) {
+				self::unlink_entry( $user_id, $game_id, $record['sram'], array( 'srm' ) );
+			}
+			return true;
+		} );
+	}
+
+	/**
+	 * عند حذف لعبة نهائياً: تُحذف حفظات كل الأعضاء لها، وإلا بقيت تشغل مساحتهم بلا سبيل لتحريرها.
+	 *
+	 * @param int $post_id رقم المحتوى المحذوف.
+	 */
+	public static function on_delete_post( $post_id ) {
+		if ( Post_Types::GAME !== get_post_type( $post_id ) ) {
+			return;
+		}
+		$users = get_users(
+			array(
+				'fields'     => 'ID',
+				'number'     => -1,
+				'meta_query' => array( array( 'key' => self::META, 'compare' => 'EXISTS' ) ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+			)
+		);
+		foreach ( $users as $user_id ) {
+			self::delete_game( (int) $user_id, (int) $post_id );
+		}
+	}
+
+	/**
 	 * عند حذف العضو: احذف كل ملفاته.
 	 *
 	 * @param int $user_id رقم العضو.
@@ -562,16 +610,20 @@ final class Saves {
 
 	/**
 	 * كل حفظ العضو مجمّعاً حسب اللعبة، الأحدث نشاطاً أولاً.
-	 * كل عنصر يحمل حقول أحدث حالة (توافقاً مع 1.1) + states + sram.
+	 * كل عنصر يحمل حقول أحدث حالة (توافقاً مع 1.1) + states + sram + available (هل اللعبة منشورة) + title + bytes.
+	 * حفظات لعبة حُذفت أو لم تعد منشورة تبقى في القائمة لأنها تشغل مساحة الحساب، ويستطيع العضو حذفها.
 	 *
 	 * @param int $user_id رقم العضو.
 	 * @return array[]
 	 */
 	public static function for_user( $user_id ) {
 		$out = array();
-		foreach ( array_keys( self::entries( $user_id ) ) as $game_id ) {
-			if ( Post_Types::GAME !== get_post_type( $game_id ) || 'publish' !== get_post_status( $game_id ) ) {
-				continue;
+		$all = self::entries( $user_id );
+		foreach ( $all as $game_id => $record ) {
+			$available = Post_Types::GAME === get_post_type( $game_id ) && 'publish' === get_post_status( $game_id );
+			$bytes     = $record['sram'] ? (int) $record['sram']['size'] : 0;
+			foreach ( $record['states'] as $entry ) {
+				$bytes += self::entry_bytes( $user_id, $game_id, $entry );
 			}
 			$sum    = self::summary( $user_id, $game_id );
 			$latest = $sum['states'] ? $sum['states'][0] : array(
@@ -585,10 +637,13 @@ final class Saves {
 				'outdated' => false,
 				'shot_url' => '',
 			);
-			$latest['states']   = $sum['states'];
-			$latest['sram']     = $sum['sram'];
-			$latest['activity'] = max( (int) $latest['time'], $sum['sram'] ? $sum['sram']['time'] : 0 );
-			$out[]              = $latest;
+			$latest['states']    = $sum['states'];
+			$latest['sram']      = $sum['sram'];
+			$latest['activity']  = max( (int) $latest['time'], $sum['sram'] ? $sum['sram']['time'] : 0 );
+			$latest['available'] = $available;
+			$latest['title']     = $available ? get_the_title( $game_id ) : __( 'لعبة لم تعد متاحة', 'retrovault-core' );
+			$latest['bytes']     = $bytes;
+			$out[]               = $latest;
 		}
 		usort(
 			$out,
@@ -791,17 +846,24 @@ final class Saves {
 	 * @param \WP_REST_Request $request الطلب.
 	 */
 	public static function rest_delete_state( $request ) {
-		$post = Rest::game( (int) $request['id'] );
-		if ( is_wp_error( $post ) ) {
-			return $post;
-		}
-		$token = (string) $request->get_param( 'slot' );
+		// حفظات العضو نفسه تُحذف ولو حُذفت اللعبة أو لم تعد منشورة، وإلا بقيت تشغل مساحته بلا سبيل لتحريرها.
+		$game_id = (int) $request['id'];
+		$user_id = get_current_user_id();
+		$token   = (string) $request->get_param( 'slot' );
 		if ( '' !== $token && ! self::valid_token( $token ) ) {
 			return new \WP_Error( 'rv_bad_slot', __( 'خانة حفظ غير صالحة.', 'retrovault-core' ), array( 'status' => 400 ) );
 		}
-		$deleted = self::delete_state( get_current_user_id(), $post->ID, $token );
+		$deleted = self::delete_state( $user_id, $game_id, $token );
 		if ( is_wp_error( $deleted ) ) { return $deleted; }
-		return self::rest_summary( $request );
+		// sram=1 مع حذف كل الحالات: يحذف حفظ اللعبة الداخلي أيضاً (لعبة لم تعد متاحة مثلاً).
+		if ( '' === $token && rest_sanitize_boolean( $request->get_param( 'sram' ) ) ) {
+			$sram = self::delete_sram( $user_id, $game_id );
+			if ( is_wp_error( $sram ) ) { return $sram; }
+		}
+		$sum           = self::summary( $user_id, $game_id );
+		$sum['exists'] = ! empty( $sum['states'] );
+		$sum['latest'] = $sum['states'] ? $sum['states'][0] : null;
+		return rest_ensure_response( $sum );
 	}
 
 	/**
@@ -864,11 +926,8 @@ final class Saves {
 	 * @param \WP_REST_Request $request الطلب.
 	 */
 	public static function rest_delete_sram( $request ) {
-		$post = Rest::game( (int) $request['id'] );
-		if ( is_wp_error( $post ) ) {
-			return $post;
-		}
-		$deleted = self::delete_sram( get_current_user_id(), $post->ID );
+		// كما في حذف الحالات: لا يُشترط أن تكون اللعبة منشورة.
+		$deleted = self::delete_sram( get_current_user_id(), (int) $request['id'] );
 		if ( is_wp_error( $deleted ) ) { return $deleted; }
 		return rest_ensure_response( array( 'exists' => false ) );
 	}

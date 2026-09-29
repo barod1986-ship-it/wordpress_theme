@@ -306,6 +306,15 @@ rest "games/$GAME/save" slot -F "state=@$TMP/state.bin" -F core=fceumm
 rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123 -F base=
 rest me/notify email -H 'Content-Type: application/json' -d '{"email":true}'
 expect 200 /account/ "$TMP/member.jar"
+# حفظات لعبة لم تعد منشورة تبقى في «حسابي» مع زر حذف (تشغل مساحة الحساب).
+wp post update "$GAME" --post_status=draft --quiet
+expect 200 /account/ "$TMP/member.jar"
+if grep -q 'save-card--gone' "$TMP/body" && grep -q 'data-delete-all' "$TMP/body"; then
+	echo "ok saves of an unpublished game stay listed with a delete button"
+else
+	fail "saves of an unpublished game vanished from the account page"
+fi
+wp post update "$GAME" --post_status=publish --quiet
 expect 302 /wp-admin/ "$TMP/member.jar"
 
 echo "== Instant sign-up"
@@ -394,7 +403,7 @@ echo "== Plain permalinks"
 # بلا روابط دائمة يكون مسار REST هو جذر الموقع؛ لو دخل قائمة استثناءات عامل الخدمة لتوقف عن كل الصفحات.
 wp rewrite structure '' --quiet
 curl -s -o "$TMP/sw.js" "$BASE/?rv_sw=1"
-node -e 'const m = require("fs").readFileSync(process.argv[1], "utf8").match(/^self\.RV_SW = (.*);$/m); const c = JSON.parse(m[1]); if (c.skip.some(p => p === "/" || p === c.scope || p.length < 2)) { console.error("skip list:", c.skip); process.exit(1); } console.log("ok the service worker skip list has no site-root entry:", c.skip.join(" "));' "$TMP/sw.js" || fail "the service worker would skip every page under plain permalinks"
+node -e 'const m = require("fs").readFileSync(process.argv[1], "utf8").match(/^self\.RV_SW = (.*);$/m); const c = JSON.parse(m[1]); if (c.skip.some(p => p === "/" || p === c.scope || p.length < 2)) { console.error("skip list:", c.skip); process.exit(1); } if (!c.skipQuery.some(q => /^page_id=[0-9]+$/.test(q))) { console.error("skipQuery:", c.skipQuery); process.exit(1); } console.log("ok the service worker skips the account page by its query and has no site-root entry:", c.skip.join(" "), "|", c.skipQuery.join(" "));' "$TMP/sw.js" || fail "the service worker skip lists are wrong under plain permalinks"
 expect 200 "/?rv_game=pixel-quest"
 wp rewrite structure '/%postname%/' --quiet
 expect 200 /games/pixel-quest/

@@ -167,8 +167,15 @@ final class Pwa {
 			(string) wp_parse_url( rest_url(), PHP_URL_PATH ),
 			(string) wp_parse_url( site_url( 'wp-cron.php' ), PHP_URL_PATH ),
 		);
+		// صفحة «حسابي» خاصة: بلا روابط دائمة رابطها ?page_id=N ومسارها جذر الموقع، فتُستثنى بمعاملها لا بمسارها.
+		$skip_query = array();
 		if ( Account::url() ) {
-			$skip[] = (string) wp_parse_url( Account::url(), PHP_URL_PATH );
+			$account_query = (string) wp_parse_url( Account::url(), PHP_URL_QUERY );
+			if ( '' !== $account_query ) {
+				$skip_query[] = $account_query;
+			} else {
+				$skip[] = (string) wp_parse_url( Account::url(), PHP_URL_PATH );
+			}
 		}
 		$config = array(
 			'version'  => RETROVAULT_VERSION . '-' . substr( md5( $data_path . wp_json_encode( self::icons() ) ), 0, 8 ),
@@ -187,6 +194,7 @@ final class Pwa {
 					}
 				)
 			),
+			'skipQuery' => $skip_query,
 			'maxPages' => 60,
 			'maxShell' => 300,
 		);

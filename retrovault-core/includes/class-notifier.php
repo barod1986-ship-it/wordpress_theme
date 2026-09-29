@@ -166,7 +166,7 @@ final class Notifier {
 						'games'   => array_map( 'intval', $game_ids ),
 						'ref'     => (int) $ref_id,
 						'version' => (string) $version,
-						'offset'  => 0,
+						'after'   => 0,
 						'job'     => strtolower( wp_generate_password( 8, false ) ),
 					),
 				)
@@ -180,6 +180,8 @@ final class Notifier {
 
 	/**
 	 * دفعة من الرسائل؛ تجدول الدفعة التالية إن بقي متابعون.
+	 * تُستأنف من آخر رقم عضو أُرسل إليه (after) لا من موضع في القائمة: من ألغى متابعته بين دفعتين كان يُزحزح
+	 * القائمة فيُتخطّى عضو لم تصله الرسالة.
 	 *
 	 * @param array $job بيانات المهمة.
 	 */
@@ -191,19 +193,34 @@ final class Notifier {
 				'games'   => array(),
 				'ref'     => 0,
 				'version' => '',
-				'offset'  => 0,
 				'job'     => '',
 			)
 		);
-		$users = Favorites::followers( $job['games'] );
-		foreach ( array_slice( $users, (int) $job['offset'], self::BATCH ) as $user_id ) {
+		$users = Favorites::followers( $job['games'] ); // بترتيب رقم العضو تصاعدياً.
+		$after = isset( $job['after'] ) ? (int) $job['after'] : 0;
+		if ( ! isset( $job['after'] ) && ! empty( $job['offset'] ) ) {
+			// مهمة جُدولت قبل 1.16.3 بموضع عددي.
+			$sent  = array_slice( $users, 0, (int) $job['offset'] );
+			$after = $sent ? (int) end( $sent ) : 0;
+		}
+		$pending = array_values(
+			array_filter(
+				$users,
+				static function ( $user_id ) use ( $after ) {
+					return (int) $user_id > $after;
+				}
+			)
+		);
+		$batch   = array_slice( $pending, 0, self::BATCH );
+		foreach ( $batch as $user_id ) {
 			$user = get_userdata( $user_id );
 			if ( $user && is_email( $user->user_email ) && self::email_enabled( $user_id ) ) {
 				self::mail( $user, $job );
 			}
 		}
-		if ( count( $users ) > (int) $job['offset'] + self::BATCH ) {
-			$job['offset'] = (int) $job['offset'] + self::BATCH;
+		if ( count( $pending ) > self::BATCH ) {
+			unset( $job['offset'] );
+			$job['after'] = (int) end( $batch );
 			wp_schedule_single_event( time() + MINUTE_IN_SECONDS, self::HOOK, array( $job ) );
 		}
 	}

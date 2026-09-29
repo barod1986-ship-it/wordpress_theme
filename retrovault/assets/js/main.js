@@ -413,9 +413,11 @@
 		var btn = e.target.closest('[data-delete-save]');
 		if (!btn || btn.disabled) { return; }
 		var slot = btn.getAttribute('data-slot') || '';
-		if (!window.confirm(slot ? i18n.delSlot : i18n.delConfirm)) { return; }
+		/* لعبة لم تعد متاحة: تُحذف الحالات وحفظ اللعبة الداخلي معاً */
+		var all = btn.hasAttribute('data-delete-all');
+		if (!window.confirm(slot ? i18n.delSlot : (all ? (i18n.delAll || i18n.delConfirm) : i18n.delConfirm))) { return; }
 		btn.disabled = true;
-		member('DELETE', 'games/' + btn.getAttribute('data-game') + '/save', slot ? 'slot=' + encodeURIComponent(slot) : '')
+		member('DELETE', 'games/' + btn.getAttribute('data-game') + '/save', slot ? 'slot=' + encodeURIComponent(slot) : (all ? 'sram=1' : ''))
 			.then(function (data) {
 				var card = btn.closest('[data-save-card]');
 				if (slot) {
@@ -423,7 +425,7 @@
 					var list = item ? item.closest('[data-state-ui]') : null;
 					if (item) { item.remove(); }
 					if (list && !list.querySelector('[data-save-slot]')) { list.remove(); }
-				} else if (card && card.hasAttribute('data-has-sram')) {
+				} else if (card && card.hasAttribute('data-has-sram') && !all) {
 					/* يبقى حفظ اللعبة الداخلي: نزيل عناصر الحالات فقط ونُظهر زر «العب» */
 					$$('[data-state-ui]', card).forEach(function (el) { el.remove(); });
 					var play = $('[data-play-link]', card);
