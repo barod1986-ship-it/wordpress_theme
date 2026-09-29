@@ -24,6 +24,13 @@ final class Signup {
 	const WELCOME_COOKIE = 'rv_welcome';
 
 	/**
+	 * رمز نموذج التسجيل لهذا المتصفح (من ملف تعريف الارتباط أو صدر للتو)، يُطبع في حقل مخفي.
+	 *
+	 * @var string
+	 */
+	private static $token = '';
+
+	/**
 	 * كلمة المرور المختارة بعد التحقق منها، كما وصلت في الطلب: wp_signon يقارن كلمة المرور عند الدخول
 	 * بالصيغة نفسها (مع الشرطات المائلة التي يضيفها ووردبريس)، فتُحفظ هكذا ليدخل بها العضو لاحقاً.
 	 *
@@ -32,6 +39,7 @@ final class Signup {
 	private static $password = null;
 
 	public static function init() {
+		add_action( 'login_form_register', array( __CLASS__, 'issue_token' ) );
 		add_action( 'register_form', array( __CLASS__, 'fields' ) );
 		add_filter( 'registration_errors', array( __CLASS__, 'validate' ), 10, 3 );
 		add_action( 'register_new_user', array( __CLASS__, 'sign_in' ), 5 );
@@ -57,6 +65,46 @@ final class Signup {
 			$url = add_query_arg( 'redirect_to', rawurlencode( $redirect ), $url );
 		}
 		return $url;
+	}
+
+	/** ملف تعريف ارتباط يربط نموذج التسجيل بمتصفح الزائر (اسم لكل موقع). */
+	public static function cookie_name() {
+		return 'rv_signup_' . COOKIEHASH;
+	}
+
+	/**
+	 * شاشة التسجيل، عرضاً أو إرسالاً، قبل أي إخراج: رمز عشوائي في ملف تعريف ارتباط HttpOnly يطبعه النموذج في
+	 * حقل مخفي ويُقارنان عند الإرسال. نموذج في موقع آخر لا يقرأ ملف الارتباط ولا يرسله مع طلب POST من
+	 * موقعه، فلا يستطيع إنشاء حساب بكلمة مرور يعرفها وإدخال متصفح الزائر فيه ليجمع حفظاته (login CSRF).
+	 * nonce ووردبريس لا يكفي هنا: قيمته واحدة لكل الزوار.
+	 */
+	public static function issue_token() {
+		if ( ! self::enabled() ) {
+			return;
+		}
+		self::$token = self::received_token();
+		if ( '' !== self::$token || headers_sent() ) {
+			return;
+		}
+		self::$token = strtolower( wp_generate_password( 32, false, false ) );
+		setcookie(
+			self::cookie_name(),
+			self::$token,
+			array(
+				'expires'  => time() + 12 * HOUR_IN_SECONDS,
+				'path'     => COOKIEPATH ? COOKIEPATH : '/',
+				'secure'   => is_ssl(),
+				'httponly' => true,
+				'samesite' => 'Lax',
+			)
+		);
+	}
+
+	/** الرمز كما وصل في ملف تعريف الارتباط مع هذا الطلب. */
+	private static function received_token() {
+		$name  = self::cookie_name();
+		$value = isset( $_COOKIE[ $name ] ) && is_string( $_COOKIE[ $name ] ) ? $_COOKIE[ $name ] : '';
+		return preg_match( '/^[a-z0-9]{32}$/', $value ) ? $value : '';
 	}
 
 	/** شاشة التسجيل في wp-login.php، عرضاً أو إرسالاً. */
@@ -90,6 +138,7 @@ final class Signup {
 			<label for="rv_website"><?php esc_html_e( 'اترك هذا الحقل فارغاً', 'retrovault-core' ); ?></label>
 			<input type="text" name="rv_website" id="rv_website" value="" tabindex="-1" autocomplete="off">
 		</p>
+		<input type="hidden" name="rv_signup_token" value="<?php echo esc_attr( self::$token ); ?>">
 		<?php
 	}
 
@@ -110,7 +159,14 @@ final class Signup {
 			return $errors;
 		}
 		$password = isset( $_POST['rv_pass'] ) && is_string( $_POST['rv_pass'] ) ? $_POST['rv_pass'] : '';
+		$posted   = isset( $_POST['rv_signup_token'] ) && is_string( $_POST['rv_signup_token'] ) ? $_POST['rv_signup_token'] : '';
 		// phpcs:enable
+		// الطلب من نموذجنا في هذا المتصفح (انظر issue_token)، وإلا لا يُنشأ حساب ولا يدخل أحد.
+		$received = self::received_token();
+		if ( '' === $received || ! hash_equals( $received, $posted ) ) {
+			$errors->add( 'rv_signup_expired', self::error( __( 'انتهت صلاحية صفحة التسجيل أو أُرسل النموذج من موقع آخر. أعد المحاولة من هذه الصفحة.', 'retrovault-core' ) ) );
+			return $errors;
+		}
 		// الحساب الفوري يعمل فوراً، فلا يُنشئ اتصال واحد حسابات بلا حد (برامج آلية تملأ الموقع أو مساحة الحفظ).
 		if ( Guard::blocked( 'signup', '', self::per_hour() ) ) {
 			$errors->add( 'rv_signup_limit', self::error( __( 'أُنشئت حسابات كثيرة من اتصالك خلال الساعة الأخيرة. حاول لاحقاً.', 'retrovault-core' ) ) );

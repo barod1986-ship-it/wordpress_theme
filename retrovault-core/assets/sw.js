@@ -238,12 +238,13 @@
 		return Promise.all([caches.open(PAGES), caches.open(GAMES), caches.open(SHELL)]).then(function (stores) {
 			return Promise.all(pages.map(function (href) {
 				return stores[0].match(href).then(function (hit) {
-					if (hit) { return true; }
-					if (!prepare) { return false; }
+					if (!prepare) { return !!hit; }
+					/* عند بدء اللعب متصلاً تُحدَّث الصفحتان دائماً: صفحات الأعضاء لا تُحفظ في التصفح العادي
+					 * (no-store)، فكانت نسخة محفوظة من إصدار سابق للعبة تبقى وتُعلن اللعبة جاهزة بإصدارها الجديد. */
 					return fetch(href, { credentials: 'same-origin' }).then(function (res) {
-						if (!res.ok || res.type !== 'basic' || !(res.headers.get('Content-Type') || '').includes('text/html')) { return false; }
+						if (!res.ok || res.type !== 'basic' || !(res.headers.get('Content-Type') || '').includes('text/html')) { return !!hit; }
 						return stores[0].put(href, res).then(function () { return true; });
-					}).catch(function () { return false; });
+					}).catch(function () { return !!hit; });
 				});
 			}).concat(resources.map(function (href) {
 				return Promise.all([stores[1].match(gameKey(href)), stores[2].match(href)]).then(function (hits) {

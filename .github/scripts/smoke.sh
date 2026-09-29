@@ -306,6 +306,12 @@ rest "games/$GAME/save" slot -F "state=@$TMP/state.bin" -F core=fceumm
 rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123 -F base=
 rest me/notify email -H 'Content-Type: application/json' -d '{"email":true}'
 expect 200 /account/ "$TMP/member.jar"
+# حفظ اللعبة الداخلي يشغل مساحة الحساب فله زر حذف، ويُحذف ولو أُطفئت المزامنة بعد حفظه.
+if grep -q 'data-delete-sram' "$TMP/body"; then echo "ok the account page offers to delete the game's internal save"; else fail "no way to delete the internal save from the account page"; fi
+wp option patch update retrovault_settings sram_sync 0 --format=json --quiet
+rest "games/$GAME/sram" exists -X DELETE
+wp option patch update retrovault_settings sram_sync 1 --format=json --quiet
+rest "games/$GAME/sram" hash -F "sram=@$TMP/sram.bin" -F hash=abc123 -F base=
 # حفظات لعبة لم تعد منشورة تبقى في «حسابي» مع زر حذف (تشغل مساحة الحساب).
 wp post update "$GAME" --post_status=draft --quiet
 expect 200 /account/ "$TMP/member.jar"
@@ -318,11 +324,23 @@ wp post update "$GAME" --post_status=publish --quiet
 expect 302 /wp-admin/ "$TMP/member.jar"
 
 echo "== Instant sign-up"
+# نموذج من موقع آخر لا يملك ملف تعريف ارتباط النموذج: لا حساب ولا دخول (login CSRF).
+csrf=$(curl -s -c "$TMP/csrf.jar" -o "$TMP/csrf.html" -w '%{http_code}' --data-urlencode 'user_login=csrfvictim' \
+	--data-urlencode 'user_email=csrf@example.com' --data-urlencode 'rv_pass=attacker-pass1' -d 'wp-submit=Register' "$BASE/wp-login.php?action=register")
+if [ "$csrf" = 200 ] && ! grep -qi 'wordpress_logged_in' "$TMP/csrf.jar" && [ -z "$(wp user list --login=csrfvictim --field=ID)" ]; then
+	echo "ok a sign-up posted without the form cookie creates no account and signs nobody in"
+else
+	fail "a sign-up posted from another site created an account or signed the browser in ($csrf)"
+fi
+# التسجيل الحقيقي: فتح النموذج أولاً (ملف تعريف الارتباط والحقل المخفي)، ثم الإرسال.
+curl -s -c "$TMP/newbie.jar" -o "$TMP/register.html" "$BASE/wp-login.php?action=register"
+token=$(grep -oP 'name="rv_signup_token" value="\K[a-z0-9]{32}' "$TMP/register.html" || true)
+check "the sign-up form carries a browser-bound token" 32 "${#token}"
 # كلمة مرور فيها ' لأن ووردبريس يضيف لها شرطة مائلة، والدخول لاحقاً يقارنها بالصيغة نفسها.
-signup=$(curl -s -c "$TMP/newbie.jar" -o /dev/null -w '%{http_code} %{redirect_url}' \
+signup=$(curl -s -b "$TMP/newbie.jar" -c "$TMP/newbie.jar" -o /dev/null -w '%{http_code} %{redirect_url}' \
 	--data-urlencode 'user_login=newbie' --data-urlencode 'user_email=newbie@example.com' \
 	--data-urlencode "rv_pass=it's-a-pass1" --data-urlencode "redirect_to=$BASE/games/pixel-quest/" \
-	-d 'wp-submit=Register' "$BASE/wp-login.php?action=register")
+	--data-urlencode "rv_signup_token=$token" -d 'wp-submit=Register' "$BASE/wp-login.php?action=register")
 check "sign-up returns to the page it started from" "302 $BASE/games/pixel-quest/" "$signup"
 expect 200 /account/ "$TMP/newbie.jar"
 if grep -q 'rv-account-form' "$TMP/body"; then

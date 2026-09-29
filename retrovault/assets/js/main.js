@@ -441,6 +441,30 @@
 			});
 	});
 
+	/* ---------- حذف حفظ اللعبة الداخلي (صفحة حسابي): يشغل مساحة الحساب ولو لم توجد حالات ---------- */
+	document.addEventListener('click', function (e) {
+		var btn = e.target.closest('[data-delete-sram]');
+		if (!btn || btn.disabled) { return; }
+		if (!window.confirm(i18n.delSram || i18n.delConfirm)) { return; }
+		btn.disabled = true;
+		member('DELETE', 'games/' + btn.getAttribute('data-game') + '/sram')
+			.then(function () {
+				var card = btn.closest('[data-save-card]');
+				if (card) {
+					var line = card.querySelector('.save-card__sram');
+					if (line) { line.remove(); }
+					card.removeAttribute('data-has-sram');
+					btn.remove();
+					if (!card.querySelector('[data-state-ui]')) { card.remove(); }
+				}
+				toast(i18n.delDone);
+			})
+			.catch(function (err) {
+				btn.disabled = false;
+				toast((err && err.message) || i18n.error);
+			});
+	});
+
 	/* ---------- رسائل التحديثات (صفحة حسابي) ---------- */
 	document.addEventListener('change', function (e) {
 		var box = e.target.closest('[data-notify-toggle]');
