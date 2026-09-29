@@ -138,13 +138,21 @@ add_filter( 'pre_wp_mail', $capture_mail, 10, 2 );
 $pagenow_before     = $GLOBALS['pagenow'];
 $GLOBALS['pagenow'] = 'wp-login.php';
 $_REQUEST['action'] = 'register';
-$_POST = array( 'rv_pass' => 'short' );
+// A sign-up posted without the form's browser-bound token (a form on another site) creates nothing.
+$_POST  = array( 'rv_pass' => wp_slash( "it's-a-pass1" ) );
+$result = register_new_user( 'csrfvictim', 'csrf@example.com' );
+rv_assert( is_wp_error( $result ) && in_array( 'rv_signup_expired', $result->get_error_codes(), true ) && ! username_exists( 'csrfvictim' ), 'a sign-up without the form cookie creates no account' );
+$_COOKIE[ \RetroVault\Signup::cookie_name() ] = str_repeat( 'a', 32 );
+$_POST  = array( 'rv_signup_token' => str_repeat( 'b', 32 ), 'rv_pass' => wp_slash( "it's-a-pass1" ) );
+$result = register_new_user( 'csrfvictim', 'csrf@example.com' );
+rv_assert( is_wp_error( $result ) && in_array( 'rv_signup_expired', $result->get_error_codes(), true ) && ! username_exists( 'csrfvictim' ), 'a sign-up whose token does not match the cookie creates no account' );
+$_POST = array( 'rv_signup_token' => str_repeat( 'a', 32 ), 'rv_pass' => 'short' );
 $result = register_new_user( 'regsignup', 'regsignup@example.com' );
 rv_assert( is_wp_error( $result ) && in_array( 'rv_pass_short', $result->get_error_codes(), true ) && ! username_exists( 'regsignup' ), 'instant sign-up rejects a short password before creating the account' );
-$_POST = array( 'rv_pass' => wp_slash( "it's-a-pass1" ), 'rv_website' => 'http://spam.example' );
+$_POST = array( 'rv_signup_token' => str_repeat( 'a', 32 ), 'rv_pass' => wp_slash( "it's-a-pass1" ), 'rv_website' => 'http://spam.example' );
 $result = register_new_user( 'regsignup', 'regsignup@example.com' );
 rv_assert( is_wp_error( $result ) && in_array( 'rv_signup_blocked', $result->get_error_codes(), true ) && ! username_exists( 'regsignup' ), 'the hidden bot field blocks sign-up' );
-$_POST  = array( 'rv_pass' => wp_slash( "it's-a-pass1" ) );
+$_POST  = array( 'rv_signup_token' => str_repeat( 'a', 32 ), 'rv_pass' => wp_slash( "it's-a-pass1" ) );
 $member = register_new_user( 'regsignup', 'regsignup@example.com' );
 rv_assert( is_int( $member ) && get_current_user_id() === $member, 'instant sign-up creates the account and signs it in' );
 rv_assert( wp_authenticate( 'regsignup', wp_slash( "it's-a-pass1" ) ) instanceof WP_User, 'the chosen password works on the login form' );
@@ -287,7 +295,7 @@ $_REQUEST['action'] = 'register';
 for ( $i = 0; $i < 5; $i++ ) {
 	\RetroVault\Guard::fail( 'signup', '' );
 }
-$_POST  = array( 'rv_pass' => 'long-enough-1' );
+$_POST  = array( 'rv_signup_token' => str_repeat( 'a', 32 ), 'rv_pass' => 'long-enough-1' );
 $signup = register_new_user( 'reglimit', 'reglimit@example.com' );
 rv_assert( is_wp_error( $signup ) && in_array( 'rv_signup_limit', $signup->get_error_codes(), true ) && ! username_exists( 'reglimit' ), 'instant sign-ups from one connection are limited per hour' );
 \RetroVault\Guard::clear( 'signup', '' );

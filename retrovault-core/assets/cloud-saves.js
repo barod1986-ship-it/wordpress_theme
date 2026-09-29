@@ -179,6 +179,9 @@
 	};
 	var onFlush = function (bytes) {
 		if (!bytes || !bytes.length || blocked) { return; }
+		/* أثناء مزامنة (تنزيل حفظ الحساب بعد عودة الاتصال مثلاً) لا رفع تلقائي: كان يرفع تقدّم الجهاز
+		 * بالأساس الذي عرفته المزامنة للتو فيستبدل حفظ الحساب قبل أن يكتمل تنزيله. الدفعة التالية تكفي. */
+		if (syncing) { return; }
 		var copy = new Uint8Array(bytes);
 		var h = hash(copy);
 		if (cloudBase === null) {

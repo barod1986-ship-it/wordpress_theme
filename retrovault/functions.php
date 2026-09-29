@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RVT_VERSION', '1.16.3' );
+define( 'RVT_VERSION', '1.16.4' );
 
 require_once get_template_directory() . '/inc/icons.php';
 require_once get_template_directory() . '/inc/customizer.php';
@@ -99,6 +99,7 @@ function rvt_assets() {
 				'delConfirm'  => __( 'حذف كل حفظات الحالة لهذه اللعبة من حسابك؟ حفظ اللعبة الداخلي لا يُحذف.', 'retrovault' ),
 				'delSlot'     => __( 'حذف هذا الحفظ من حسابك؟ لا يمكن التراجع عن ذلك.', 'retrovault' ),
 				'delAll'      => __( 'حذف كل حفظات هذه اللعبة من حسابك، الحالات وحفظ اللعبة الداخلي؟ لا يمكن التراجع عن ذلك.', 'retrovault' ),
+				'delSram'     => __( 'حذف حفظ اللعبة الداخلي من حسابك؟ يبقى ما على جهازك الحالي، ولا يمكن التراجع عن ذلك.', 'retrovault' ),
 				'delDone'     => __( 'حُذف الحفظ.', 'retrovault' ),
 				'posting'     => __( 'جارٍ النشر…', 'retrovault' ),
 				'posted'      => __( 'نُشر تعليقك.', 'retrovault' ),

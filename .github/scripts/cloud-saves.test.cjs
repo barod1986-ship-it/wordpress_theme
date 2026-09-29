@@ -37,6 +37,7 @@ function session({ local = [1, 2], server = { bytes: [1, 2] }, storage = new Map
         return Response.json({ hash: hash(server.bytes) });
       }
       if (server.failRead) { return new Response('', { status: 503 }); }
+      if (url.endsWith('/sram/file') && server.holdRead) { await server.holdRead; }
       if (url.endsWith('/sram/file')) { return new Response(Uint8Array.from(server.bytes), { headers: { 'X-RV-Hash': hash(server.bytes), 'X-RV-Encoding': server.gzip ? 'gzip' : 'raw' } }); }
       if (url.includes('/save/state')) { return new Response(Uint8Array.from([1]), { headers: { 'X-RV-Encoding': server.gzip ? 'gzip' : 'raw' } }); }
       return Response.json({ exists: !!server.bytes.length, hash: server.bytes.length ? hash(server.bytes) : '' });
@@ -140,4 +141,20 @@ test('a gzip save on a browser without DecompressionStream explains itself and s
   const b = session({ server: { bytes: [1, 2], gzip: true } }); await b.start();
   b.sandbox.EJS_onLoadState(); await new Promise(r => setTimeout(r, 50));
   assert.equal(b.messages.at(-1), 'unsupported');
+});
+test('an automatic flush during a reconnection sync never overwrites the account save being downloaded', async () => {
+  const server = { bytes: [5, 6], failRead: true };
+  const a = session({ local: [7, 8], server });
+  await a.start(); // the first sync fails: the launch was effectively offline
+  assert.equal(a.calls.filter(c => c.type === 'POST').length, 0);
+  server.failRead = false;
+  let release; server.holdRead = new Promise(r => { release = r; });
+  const sync = a.flush(); // reconnection: re-check the server, download is held in flight
+  await new Promise(r => setTimeout(r, 30));
+  a.setLocal([9, 9]); await a.flush(); // progress made while the download is in flight
+  assert.deepEqual(server.bytes, [5, 6], 'nothing is uploaded while the sync runs');
+  release(); await sync;
+  assert.deepEqual(server.bytes, [5, 6], 'the account save was not replaced');
+  assert.deepEqual(a.getLocal(), [9, 9], 'progress made during the sync is kept on the device');
+  assert.ok(a.messages.includes('conflict'));
 });

@@ -724,7 +724,8 @@ final class Saves {
 				array(
 					'methods'             => \WP_REST_Server::DELETABLE,
 					'callback'            => array( __CLASS__, 'rest_delete_sram' ),
-					'permission_callback' => array( __CLASS__, 'sram_permission' ),
+					// حذف بيانات العضو نفسه لا يتوقف على تفعيل المزامنة (قد تُطفأ بعد أن حُفظت).
+					'permission_callback' => $perm,
 				),
 			)
 		);

@@ -5,12 +5,14 @@ const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assets = path.join(__dirname, '../../retrovault-core/assets');
-let base, version = 'one', enabled = true, account = '', romStatus = 200;
+let base, version = 'one', enabled = true, account = '', romStatus = 200, down = false;
 const token = 'a'.repeat(32);
 const game = '/games/demo/';
 const player = game + 'play/';
 const rom = () => base + game + 'rom/' + token + '/demo.nes?v=' + version;
 const server = http.createServer((req, res) => {
+  // Chromium's offline emulation does not reach service-worker fetches; a dead server does.
+  if (down) { req.socket.destroy(); return; }
   const url = new URL(req.url, base);
   if (url.searchParams.has('rv_sw')) {
     res.writeHead(200, { 'Content-Type': 'application/javascript', 'Service-Worker-Allowed': '/', 'Cache-Control': 'no-cache' });
@@ -32,7 +34,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === game || url.pathname === player) {
     const config = { enabled, sw: base + '/?rv_sw=1', scope: '/', cache: 'rv-offline', dataPath: base + '/data/', assets: base + '/assets/', user: account };
     const marker = { key: '/__rv-offline/42', data: { id: 42, title: 'Demo', url: base + game, short: 'NES', color: '#555' }, rom: rom(), version };
-    res.writeHead(200, { 'Content-Type': 'text/html' });
+    // Signed-in pages carry no-store, so only the offline preparation may store them.
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, must-revalidate, max-age=0, no-store, private' });
     res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><span data-rv-offline-badge data-key="/__rv-offline/42" data-version="' + version + '" hidden>Ready offline</span><script>window.RVPWA=' + JSON.stringify(config) + ';window.RVOfflineGame=' + JSON.stringify(marker) + ';window.gameRom=' + JSON.stringify(rom()) + ';</script><script src="/assets/pwa.js"></script>' + (url.pathname === player ? '<script src="/data/loader.js"></script>' : '') + '</body></html>'); return;
   }
   res.writeHead(404); res.end('missing');
@@ -54,7 +57,7 @@ const server = http.createServer((req, res) => {
     console.log('PASS: a game becomes ready only after cached assets and both pages exist.');
     assert.equal((await page.goto(rom())).status(), 403);
     console.log('PASS: opening the cached ROM as a document is denied online.');
-    await context.setOffline(true);
+    await context.setOffline(true); down = true;
     assert.equal((await page.goto(rom())).status(), 403);
     console.log('PASS: opening the cached ROM as a document is denied offline.');
     await page.goto(base + game);
@@ -71,7 +74,7 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(async () => !(await (await caches.open('rv-offline')).match('/__rv-offline/42')));
     assert.equal(await page.locator('[data-rv-offline-badge]').isHidden(), true);
     console.log('PASS: missing cached ROM invalidates the receipt and hides the badge.');
-    await context.setOffline(false);
+    await context.setOffline(false); down = false;
     await page.goto(base + player); await page.waitForFunction(() => window.started === true);
     assert.equal(await page.evaluate(() => window.offlineResult), true);
     romStatus = 403;
@@ -87,6 +90,11 @@ const server = http.createServer((req, res) => {
     console.log('PASS: a game update invalidates the old offline badge.');
     await page.goto(base + player); await page.waitForFunction(() => window.started === true);
     assert.equal(await page.evaluate(() => window.offlineResult), true);
+    await context.setOffline(true); down = true;
+    await page.goto(base + player);
+    assert.equal(await page.evaluate(() => window.RVOfflineGame.version), 'two');
+    await context.setOffline(false); down = false;
+    console.log('PASS: the player page served offline belongs to the game version declared ready.');
     account = 'new-account'; await page.goto(base + game);
     await page.waitForFunction(async () => {
       for (const key of await caches.keys()) {

@@ -177,6 +177,9 @@ $rvt_space   = ( $rvt_cloud && function_exists( 'rv_saves_usage' ) ) ? rv_saves_
 									<?php if ( $rvt_states ) : ?>
 										<button type="button" class="save-card__delete" data-state-ui data-delete-save data-game="<?php echo esc_attr( $rvt_game['id'] ); ?>"><?php echo rvt_icon( 'trash' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'حذف الحفظات', 'retrovault' ); ?></button>
 									<?php endif; ?>
+									<?php if ( $rvt_sram ) : ?>
+										<button type="button" class="save-card__delete" data-delete-sram data-game="<?php echo esc_attr( $rvt_game['id'] ); ?>"><?php echo rvt_icon( 'trash' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'حذف حفظ اللعبة الداخلي', 'retrovault' ); ?></button>
+									<?php endif; ?>
 								</div>
 								<?php if ( $rvt_older ) : ?>
 									<details class="save-slots" data-state-ui>
