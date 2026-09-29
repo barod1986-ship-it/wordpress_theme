@@ -6,11 +6,13 @@
 	var ejs = function () { return window.EJS_emulator; };
 	var say = function (t) { try { ejs().displayMessage(t, 3500); } catch (e) {} };
 	var wait = function (ms) { return new Promise(function (r) { setTimeout(function () { r(null); }, ms); }); };
-	var api = function (path, opts) {
+	/* بلا روابط دائمة يحمل رابط REST ?rest_route= أصلاً، فتُلحق المعاملات بـ & لا بـ ? */
+	var withQuery = function (url, query) { return query ? url + (url.indexOf('?') === -1 ? '?' : '&') + query : url; };
+	var api = function (path, opts, query) {
 		opts = opts || {};
 		opts.credentials = 'same-origin';
 		opts.headers = { 'X-WP-Nonce': C.nonce };
-		return fetch(C.rest + 'games/' + C.id + path, opts);
+		return fetch(withQuery(C.rest + 'games/' + C.id + path, query), opts);
 	};
 	/* الضغط داخل المتصفح: حالات N64 مثلاً ~16MB أغلبها أصفار */
 	var pack = function (bytes) {
@@ -20,6 +22,12 @@
 	};
 	var unpack = function (buf, enc) {
 		if (enc !== 'gzip') { return Promise.resolve(new Uint8Array(buf)); }
+		if (!window.DecompressionStream) {
+			/* حفظ ضُغط على جهاز أحدث؛ هذا المتصفح لا يفكّه: رسالة واضحة بدل «تعذّر الاتصال» */
+			var unsupported = new Error('gzip');
+			unsupported.rvMessage = C.i18n.unsupported || C.i18n.failed;
+			return Promise.reject(unsupported);
+		}
 		var stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
 		return new Response(stream).arrayBuffer().then(function (b) { return new Uint8Array(b); });
 	};
@@ -88,8 +96,8 @@
 
 	var load = function (quiet, slot) {
 		if (!navigator.onLine) { return quiet ? Promise.resolve() : loadLocal(); }
-		var q = (slot && slot !== '1') ? '?slot=' + encodeURIComponent(slot) : '';
-		return api('/save/state' + q)
+		var q = (slot && slot !== '1') ? 'slot=' + encodeURIComponent(slot) : '';
+		return api('/save/state', null, q)
 			.then(function (r) {
 				if (r.status === 404) { if (!quiet) { say(C.i18n.none); } return null; }
 				if (!r.ok) { throw new Error('http'); }
@@ -103,7 +111,7 @@
 			})
 			.catch(function (err) {
 				if (offlineError(err) && !quiet) { return loadLocal(); }
-				if (!quiet) { say(C.i18n.failed); }
+				if (!quiet) { say((err && err.rvMessage) || C.i18n.failed); }
 			});
 	};
 	window.EJS_onLoadState = function () { load(false, ''); };
@@ -167,7 +175,7 @@
 		form.append('hash', h);
 		form.append('base', cloudBase);
 		// A queued beacon is not a server acknowledgement. Keep the prior base for the next launch.
-		try { navigator.sendBeacon(C.rest + 'games/' + C.id + '/sram?_wpnonce=' + encodeURIComponent(C.nonce), form); } catch (e) {}
+		try { navigator.sendBeacon(withQuery(C.rest + 'games/' + C.id + '/sram', '_wpnonce=' + encodeURIComponent(C.nonce)), form); } catch (e) {}
 	};
 	var onFlush = function (bytes) {
 		if (!bytes || !bytes.length || blocked) { return; }
@@ -208,7 +216,9 @@
 			if (!cloudBase || (localHash && localHash !== base && cloudBase === base)) {
 				return uploadSram(local, localHash);
 			}
-			if (localHash && base && localHash !== base && cloudBase !== base) {
+			/* حفظ مختلف هنا وفي الحساب، ولا يُعرف الأحدث (ومنه: لعب زائر على هذا الجهاز قبل الدخول، أو حساب
+			 * آخر في المتصفح نفسه، فلا أساس مسجّل): يُسأل اللاعب بدل استبدال تقدّم الجهاز بصمت */
+			if (localHash && localHash !== base && cloudBase !== base) {
 				if (!window.confirm(C.i18n.sramConflict)) { return uploadSram(local, localHash); }
 			}
 			return api('/sram/file').then(function (r) {
@@ -226,7 +236,11 @@
 					say(C.i18n.sramRestored);
 				});
 			});
-		}).catch(function () { cloudBase = null; }).then(function () { syncing = false; });
+		}).catch(function (err) {
+			cloudBase = null;
+			/* المتصفح لا يفكّ ضغط حفظ الحساب: لا إعادة محاولة كل 30 ثانية */
+			if (err && err.rvMessage) { blocked = true; say(err.rvMessage); }
+		}).then(function () { syncing = false; });
 	};
 
 	window.addEventListener('beforeunload', function () { leaving = true; });

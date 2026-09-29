@@ -54,11 +54,14 @@ final class Query {
 		$sort    = sanitize_key( self::param( 'sort' ) );
 		$status  = sanitize_key( self::param( 'status' ) );
 		$players = sanitize_key( self::param( 'players' ) );
+		// متغيرا التصنيف قد يصلان مصفوفة (?system[]=x) فيُهملان بدل تحذير «Array to string».
+		$system  = get_query_var( 'system' );
+		$genre   = get_query_var( 'genre' );
 
 		return array(
 			'q'       => sanitize_text_field( self::param( 'q' ) ),
-			'system'  => sanitize_title( (string) get_query_var( 'system' ) ),
-			'genre'   => sanitize_title( (string) get_query_var( 'genre' ) ),
+			'system'  => is_string( $system ) ? sanitize_title( $system ) : '',
+			'genre'   => is_string( $genre ) ? sanitize_title( $genre ) : '',
 			'players' => in_array( $players, array( 'single', 'multi' ), true ) ? $players : '',
 			'status'  => array_key_exists( $status, Games::statuses() ) ? $status : '',
 			'sort'    => array_key_exists( $sort, self::sorts() ) ? $sort : 'newest',

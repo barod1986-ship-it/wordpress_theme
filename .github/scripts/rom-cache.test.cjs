@@ -9,7 +9,7 @@ const origin = 'https://games.example';
 const url = origin + '/games/demo/rom/' + 'a'.repeat(32) + '/demo.nes?v=1';
 const key = url.replace(/\/rom\/[a-f0-9]{32}\//, '/rom/-/');
 
-function worker(reply) {
+function worker(reply, config = {}) {
   const listeners = {}, stores = new Map();
   const address = request => typeof request === 'string' ? request : request.url;
   const caches = {
@@ -26,14 +26,14 @@ function worker(reply) {
     async keys() { return [...stores.keys()]; },
     async delete(name) { return stores.delete(name); }
   };
-  const self = { location: { origin }, RV_SW: { version: 'test', dataPath: origin + '/data/', uploads: '/uploads/', romExt: ['nes'], skip: [], precache: [], maxPages: 60, maxShell: 300 }, addEventListener(type, fn) { listeners[type] = fn; } };
+  const self = { location: { origin }, RV_SW: { version: 'test', scope: '/', dataPath: origin + '/data/', uploads: '/uploads/', romExt: ['nes'], skip: [], precache: [], offline: '/offline/', maxPages: 60, maxShell: 300, ...config }, addEventListener(type, fn) { listeners[type] = fn; } };
   vm.runInNewContext(source, { self, caches, URL, Response, fetch: reply });
   return {
     caches,
     async request(overrides = {}) {
       let response;
       const pending = [];
-      listeners.fetch({ request: { url, method: 'GET', mode: 'cors', destination: '', ...overrides }, clientId: 'player', respondWith(value) { response = Promise.resolve(value); }, waitUntil(value) { pending.push(value); } });
+      listeners.fetch({ request: { url, method: 'GET', mode: 'cors', destination: '', clone() { return this; }, ...overrides }, clientId: 'player', respondWith(value) { response = Promise.resolve(value); }, waitUntil(value) { pending.push(value); } });
       const result = await response;
       await Promise.allSettled(pending);
       return result;
@@ -71,4 +71,35 @@ test('a network outage still permits cached player GET and HEAD requests', async
   assert.equal(response.status, 200);
   assert.equal(await response.text(), 'private ROM');
   assert.equal((await w.request({ method: 'HEAD' })).status, 200);
+});
+
+test('plain permalinks put the site root in the skip list without bypassing every page', async () => {
+  // Without pretty permalinks rest_url() is "/?rest_route=", whose path is the site root (or the scope).
+  const html = () => Promise.resolve(new Response('page', { status: 200, headers: { 'Content-Type': 'text/html' } }));
+  const w = worker(html, { skip: ['/', '/wp-admin/'] });
+  const page = await w.request({ url: origin + '/games/demo/', mode: 'navigate', destination: 'document' });
+  assert.equal(page && await page.text(), 'page');
+  assert.equal(await w.request({ url: origin + '/wp-admin/edit.php', mode: 'navigate', destination: 'document' }), undefined);
+  assert.equal(await w.request({ url: origin + '/?rest_route=/retrovault/v1/games/1/save', mode: 'cors' }), undefined);
+  const sub = worker(html, { scope: '/wp/', skip: ['/wp/', '/wp/wp-admin/'] });
+  assert.equal(await (await sub.request({ url: origin + '/wp/games/demo/', mode: 'navigate', destination: 'document' })).text(), 'page');
+});
+
+test('an emulator file the CDN cannot serve is never cached as if it were the file', async () => {
+  // <script> and <link> tags load the CDN with no-cors; the opaque answer hides a 404 unless the
+  // worker asks with cors, which the CDN allows.
+  const cdn = 'https://cdn.example/data/';
+  const opaque = { type: 'opaque', ok: false, status: 0, clone() { return this; } };
+  for (const status of [404, 500]) {
+    const w = worker((request, init) => Promise.resolve(typeof request === 'string' && init && init.mode === 'cors' ? new Response('error', { status }) : opaque), { dataPath: cdn });
+    const response = await w.request({ url: cdn + 'emulator.min.js', mode: 'no-cors', destination: 'script' });
+    assert.equal(response.status, status);
+    assert.equal(await (await w.caches.open('rv-games')).match(cdn + 'emulator.min.js'), undefined);
+  }
+  const fine = worker((request, init) => Promise.resolve(typeof request === 'string' && init && init.mode === 'cors' ? new Response('js', { status: 200 }) : opaque), { dataPath: cdn });
+  assert.equal(await (await fine.request({ url: cdn + 'emulator.min.js', mode: 'no-cors', destination: 'script' })).text(), 'js');
+  assert.equal(await (await (await fine.caches.open('rv-games')).match(cdn + 'emulator.min.js')).text(), 'js');
+  // A host that refuses cors keeps the original request, as before.
+  const strict = worker((request, init) => typeof request === 'string' && init && init.mode === 'cors' ? Promise.reject(new TypeError('cors')) : Promise.resolve(opaque), { dataPath: cdn });
+  assert.equal((await strict.request({ url: cdn + 'emulator.min.js', mode: 'no-cors', destination: 'script' })).type, 'opaque');
 });

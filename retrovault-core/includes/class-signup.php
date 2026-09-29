@@ -159,7 +159,7 @@ final class Signup {
 
 		wp_set_password( $password, $user_id );
 		delete_user_meta( $user_id, 'default_password_nag' );
-		Guard::fail( 'signup', '' );
+		Guard::fail( 'signup', '', HOUR_IN_SECONDS );
 
 		// إشعار «عضو جديد» للمدير كالمعتاد. رسالة العضو فيها رابط لتعيين كلمة مرور اختارها للتو، فلا تُرسل.
 		remove_action( 'register_new_user', 'wp_send_new_user_notifications' );
