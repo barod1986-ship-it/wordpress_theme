@@ -19,6 +19,9 @@ final class Ratings {
 	/** وزن «التقييمات الافتراضية» في المتوسط المرجّح. */
 	const PRIOR_WEIGHT = 5;
 
+	/** المتوسط العام الذي حُسبت به نتائج كل الألعاب حالياً. */
+	const MEAN_OPTION = 'retrovault_rating_mean_used';
+
 	public static function init() {
 		add_action( 'delete_user', array( __CLASS__, 'on_delete_user' ) );
 		add_action( 'before_delete_post', array( __CLASS__, 'on_delete_post' ) );
@@ -172,6 +175,13 @@ final class Ratings {
 		$prior = (int) apply_filters( 'retrovault_rating_prior_weight', self::PRIOR_WEIGHT );
 		$score = $count ? ( ( $prior * $mean ) + ( $avg * $count ) ) / ( $prior + $count ) : 0.0;
 
+		// النتيجة المرجّحة لكل لعبة تعتمد على المتوسط العام؛ إن تغيّر أُعيدت لكل الألعاب دفعة واحدة، وإلا بقيت
+		// ألعاب محسوبة بمتوسط قديم فيختلف ترتيب لعبتين لهما التقييمات نفسها بحسب توقيت آخر تقييم.
+		$used = get_option( self::MEAN_OPTION );
+		if ( false === $used || abs( (float) $used - $mean ) >= 0.005 ) {
+			self::rescore_all( $mean, $prior );
+		}
+
 		update_post_meta( $game_id, '_rv_rating_avg', round( $avg, 4 ) );
 		update_post_meta( $game_id, '_rv_rating_count', $count );
 		update_post_meta( $game_id, '_rv_rating_score', round( $score, 4 ) );
@@ -180,6 +190,25 @@ final class Ratings {
 		delete_transient( 'rv_totals' );
 
 		return self::summary( $game_id );
+	}
+
+	/**
+	 * إعادة نتيجة كل الألعاب المقيَّمة بالمتوسط العام نفسه.
+	 *
+	 * @param float $mean  المتوسط العام.
+	 * @param int   $prior وزن المتوسط.
+	 */
+	public static function rescore_all( $mean, $prior ) {
+		global $wpdb;
+		$table = self::table();
+		$rows  = $wpdb->get_results( "SELECT game_id, COUNT(*) AS c, AVG(rating) AS a FROM {$table} GROUP BY game_id" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		foreach ( (array) $rows as $row ) {
+			$count = (int) $row->c;
+			$score = $count ? ( ( $prior * $mean ) + ( (float) $row->a * $count ) ) / ( $prior + $count ) : 0.0;
+			update_post_meta( (int) $row->game_id, '_rv_rating_score', round( $score, 4 ) );
+			Games::flush( (int) $row->game_id );
+		}
+		update_option( self::MEAN_OPTION, (string) round( $mean, 6 ), false );
 	}
 
 	/**

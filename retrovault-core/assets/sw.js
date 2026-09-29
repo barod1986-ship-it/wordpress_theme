@@ -65,7 +65,34 @@
 				return true;
 			}
 		}
+		/* صفحة «حسابي» بلا روابط دائمة (?page_id=N): مسارها جذر الموقع فتُعرف بمعاملها. */
+		var pairs = C.skipQuery || [];
+		for (var j = 0; j < pairs.length; j++) {
+			var eq = pairs[j].indexOf('=');
+			if (eq > 0 && url.searchParams.get(pairs[j].slice(0, eq)) === decodeURIComponent(pairs[j].slice(eq + 1))) {
+				return true;
+			}
+		}
 		return /(^|&)(rv_random|rv_unsub|rv_sw|rv_manifest|rv_download|preview|rest_route)=/.test(url.search.slice(1)) || /\/download\/?$/.test(url.pathname);
+	}
+
+	/* بلا اتصال ولا نسخة محفوظة بالرابط نفسه: صفحة بالمسار نفسه بمعاملات أخرى (المكتبة بفلتر آخر) تكفي،
+	 * إلا في جذر الموقع: بلا روابط دائمة تتشارك كل الصفحات مسار الجذر وتختلف بمعاملاتها (?p=7)، فلا تُعرض
+	 * صفحة بدل أخرى. معاملات التتبع وحدها (start_url فيه ?source=pwa) تعني الرئيسية نفسها. */
+	var TRACKING = /^(source|utm_[a-z]+|fbclid|gclid|ref)$/;
+	function fallback(cache, req) {
+		var url = new URL(req.url);
+		if (url.pathname !== C.scope) {
+			return cache.match(req, { ignoreSearch: true });
+		}
+		var trackingOnly = true;
+		url.searchParams.forEach(function (value, key) { if (!TRACKING.test(key)) { trackingOnly = false; } });
+		return trackingOnly && url.search ? cache.match(url.origin + url.pathname) : Promise.resolve(undefined);
+	}
+
+	/* الخادم يقول إن الرد لا يُحفظ (صفحات الأعضاء وكل ما فيه بيانات شخصية). */
+	function storable(res) {
+		return !/\bno-store\b/i.test(res.headers.get('Cache-Control') || '');
 	}
 
 	function cacheable(res) {
@@ -157,7 +184,7 @@
 	function page(event) {
 		var req = event.request;
 		return fetch(req).then(function (res) {
-			if (res.ok && res.type === 'basic') {
+			if (res.ok && res.type === 'basic' && storable(res)) {
 				var copy = res.clone();
 				event.waitUntil(caches.open(PAGES).then(function (cache) {
 					return cache.put(req, copy);
@@ -167,7 +194,7 @@
 		}).catch(function () {
 			return caches.open(PAGES).then(function (cache) {
 				return cache.match(req).then(function (hit) {
-					return hit || cache.match(req, { ignoreSearch: true });
+					return hit || fallback(cache, req);
 				});
 			}).then(function (hit) {
 				return hit || caches.match(C.offline).then(function (off) {

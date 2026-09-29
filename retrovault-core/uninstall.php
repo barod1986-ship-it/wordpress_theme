@@ -62,6 +62,7 @@ delete_option( 'retrovault_account_page' );
 delete_option( 'retrovault_settings' );
 delete_option( 'retrovault_db_version' );
 delete_option( 'retrovault_upgrade_lock' );
+delete_option( 'retrovault_rating_mean_used' );
 delete_option( 'retrovault_devlog_notice' );
 // أقفال الحفظ السحابي (خيار لكل عضو أثناء الكتابة فقط).
 $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'rv\\_saves\\_mutex\\_%'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery

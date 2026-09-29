@@ -3017,6 +3017,12 @@ img.is-pixel {
 	box-shadow: inset 0 0 0 1px var(--seam), 0 3px 0 var(--cart-depth);
 }
 
+/* حفظات لعبة حُذفت أو لم تعد منشورة: بلا شاشة ولا روابط، زر الحذف فقط */
+.save-card--gone {
+	grid-template-columns: minmax(0, 1fr);
+	opacity: .85;
+}
+
 /* شاشة صغيرة تعرض آخر لحظة حُفظت فيها اللعبة */
 .save-card__screen {
 	position: relative;

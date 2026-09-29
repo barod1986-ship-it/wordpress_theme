@@ -107,7 +107,22 @@ $rvt_space   = ( $rvt_cloud && function_exists( 'rv_saves_usage' ) ) ? rv_saves_
 					<?php
 					foreach ( $rvt_saves as $rvt_group ) :
 						$rvt_game = rv_get_game( $rvt_group['game_id'] );
-						if ( ! $rvt_game ) {
+						if ( ! $rvt_game || empty( $rvt_group['available'] ) ) {
+							// لعبة حُذفت أو لم تعد منشورة: حفظاتها تشغل مساحة الحساب، فتُعرض للحذف فقط.
+							?>
+							<article class="save-card save-card--gone" data-save-card>
+								<div class="save-card__body">
+									<h3 class="save-card__title"><?php echo esc_html( isset( $rvt_group['title'] ) ? $rvt_group['title'] : '' ); ?></h3>
+									<p class="save-card__meta">
+										<span><?php esc_html_e( 'هذه اللعبة لم تعد متاحة، وحفظاتها تشغل مساحة من حسابك.', 'retrovault' ); ?></span>
+										<bdi><?php echo esc_html( size_format( isset( $rvt_group['bytes'] ) ? (int) $rvt_group['bytes'] : 0, 1 ) ); ?></bdi>
+									</p>
+									<div class="save-card__actions">
+										<button type="button" class="save-card__delete" data-delete-save data-delete-all data-game="<?php echo esc_attr( $rvt_group['game_id'] ); ?>"><?php echo rvt_icon( 'trash' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'حذف الحفظات', 'retrovault' ); ?></button>
+									</div>
+								</div>
+							</article>
+							<?php
 							continue;
 						}
 						$rvt_sys    = $rvt_game['system'];

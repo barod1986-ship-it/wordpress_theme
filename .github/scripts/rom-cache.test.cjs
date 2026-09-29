@@ -17,14 +17,20 @@ function worker(reply, config = {}) {
       if (!stores.has(name)) stores.set(name, new Map());
       const data = stores.get(name);
       return {
-        async match(request) { const hit = data.get(address(request)); return hit && hit.clone(); },
+        async match(request, opts) {
+          const key = address(request);
+          if (data.has(key)) return data.get(key).clone();
+          if (opts && opts.ignoreSearch) { for (const [k, v] of data) { if (k.split('?')[0] === key.split('?')[0]) return v.clone(); } }
+          return undefined;
+        },
         async put(request, response) { data.set(address(request), response.clone()); },
         async delete(request) { return data.delete(address(request)); },
         async keys() { return [...data.keys()].map(url => ({ url })); }
       };
     },
     async keys() { return [...stores.keys()]; },
-    async delete(name) { return stores.delete(name); }
+    async delete(name) { return stores.delete(name); },
+    async match(request) { for (const data of stores.values()) { const hit = data.get(address(request)); if (hit) return hit.clone(); } return undefined; }
   };
   const self = { location: { origin }, RV_SW: { version: 'test', scope: '/', dataPath: origin + '/data/', uploads: '/uploads/', romExt: ['nes'], skip: [], precache: [], offline: '/offline/', maxPages: 60, maxShell: 300, ...config }, addEventListener(type, fn) { listeners[type] = fn; } };
   vm.runInNewContext(source, { self, caches, URL, Response, fetch: reply });
@@ -102,4 +108,37 @@ test('an emulator file the CDN cannot serve is never cached as if it were the fi
   // A host that refuses cors keeps the original request, as before.
   const strict = worker((request, init) => typeof request === 'string' && init && init.mode === 'cors' ? Promise.reject(new TypeError('cors')) : Promise.resolve(opaque), { dataPath: cdn });
   assert.equal((await strict.request({ url: cdn + 'emulator.min.js', mode: 'no-cors', destination: 'script' })).type, 'opaque');
+});
+
+// A page response as WordPress sends it: same-origin ("basic"), optionally with Cache-Control.
+const html = (body, cacheControl) => ({ ok: true, type: 'basic', status: 200, headers: new Headers(cacheControl ? { 'Content-Type': 'text/html', 'Cache-Control': cacheControl } : { 'Content-Type': 'text/html' }), clone() { return this; }, async text() { return body; } });
+const navigate = (url) => ({ url, mode: 'navigate', destination: 'document' });
+
+test('the account page is skipped by its query under plain permalinks and never cached', async () => {
+  const w = worker(() => Promise.resolve(html('account')), { skipQuery: ['page_id=42'] });
+  assert.equal(await w.request(navigate(origin + '/?page_id=42')), undefined);
+  assert.equal(await w.request(navigate(origin + '/?page_id=42&utm_source=x')), undefined);
+  assert.equal(await (await w.request(navigate(origin + '/?page_id=7'))).text(), 'account');
+  assert.equal(await (await w.caches.open('rv-pages-test')).match(origin + '/?page_id=42'), undefined);
+});
+
+test('responses marked no-store (every signed-in page) are never stored for offline use', async () => {
+  const w = worker((req) => Promise.resolve(html('private', 'no-cache, must-revalidate, max-age=0, no-store, private')));
+  assert.equal(await (await w.request(navigate(origin + '/games/'))).text(), 'private');
+  assert.equal(await (await w.caches.open('rv-pages-test')).match(origin + '/games/'), undefined);
+  const pub = worker(() => Promise.resolve(html('public')));
+  await pub.request(navigate(origin + '/games/'));
+  assert.equal(await (await (await pub.caches.open('rv-pages-test')).match(origin + '/games/')).text(), 'public');
+});
+
+test('offline, a cached root page is never served for a different ?p= page', async () => {
+  const w = worker(() => Promise.reject(new TypeError('offline')));
+  const pages = await w.caches.open('rv-pages-test');
+  await pages.put(origin + '/?p=1', new Response('page one'));
+  await pages.put(origin + '/', new Response('home'));
+  await pages.put(origin + '/games/', new Response('library'));
+  assert.equal(await (await w.request(navigate(origin + '/?p=1'))).text(), 'page one');
+  assert.notEqual(await (await w.request(navigate(origin + '/?p=2'))).text(), 'page one');
+  assert.equal(await (await w.request(navigate(origin + '/?source=pwa'))).text(), 'home', 'the PWA start URL still opens the cached home page');
+  assert.equal(await (await w.request(navigate(origin + '/games/?sort=rating'))).text(), 'library', 'filtered views still fall back to the cached library');
 });

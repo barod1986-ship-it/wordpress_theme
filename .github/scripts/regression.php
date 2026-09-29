@@ -397,4 +397,81 @@ rv_assert( false !== wp_next_scheduled( \RetroVault\Notifier::HOOK, array( array
 \RetroVault\Installer::deactivate();
 rv_assert( false === wp_next_scheduled( \RetroVault\Notifier::HOOK, array( array( 'post' => 1 ) ) ) && false === wp_next_scheduled( \RetroVault\Analytics::HOOK ), 'deactivation removes scheduled mailings and the hourly trends job' );
 \RetroVault\Analytics::schedule();
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit, search-engine, player, session and cleanup regressions passed.' );
+// 1.16.3: saves of a game that is no longer available stay visible and deletable, and vanish with the game.
+wp_set_current_user( $author );
+$gone = wp_insert_post( array( 'post_type' => 'rv_game', 'post_title' => 'Gone Game', 'post_status' => 'publish' ) );
+$tmp  = wp_tempnam( 'rv-gone' );
+file_put_contents( $tmp, str_repeat( 'x', 300 ) );
+rv_assert( ! is_wp_error( Saves::add_state( $author, $gone, $tmp, null, '', 'raw', 'fceumm' ) ), 'state saved for the game that will disappear' );
+$tmp = wp_tempnam( 'rv-gone' );
+file_put_contents( $tmp, 'sram' );
+rv_assert( ! is_wp_error( Saves::put_sram( $author, $gone, $tmp, 'raw', 'ffff-4', '' ) ), 'SRAM saved for the game that will disappear' );
+$before = Saves::usage( $author );
+wp_update_post( array( 'ID' => $gone, 'post_status' => 'draft' ) );
+$listed = array_filter( rv_get_saves( $author ), static function ( $g ) use ( $gone ) { return (int) $g['game_id'] === (int) $gone; } );
+$listed = $listed ? array_values( $listed )[0] : null;
+rv_assert( $listed && empty( $listed['available'] ) && $listed['bytes'] >= 304, 'saves of an unpublished game are listed as unavailable with their size' );
+rv_assert( Saves::usage( $author ) === $before, 'hidden saves still count towards the quota until deleted' );
+$response = rv_request( 'DELETE', '/retrovault/v1/games/' . $gone . '/save', array( 'sram' => '1' ) );
+rv_assert( 200 === $response->get_status(), 'the member can delete saves of an unavailable game' );
+rv_assert( Saves::usage( $author ) === $before - 304 && ! rv_get_saves( $author ), 'states and SRAM of the unavailable game are gone and the quota is freed' );
+$tmp = wp_tempnam( 'rv-gone' );
+file_put_contents( $tmp, str_repeat( 'y', 100 ) );
+rv_assert( ! is_wp_error( Saves::add_state( $author, $gone, $tmp, null, '', 'raw', 'fceumm' ) ), 'state saved again before deleting the game' );
+$dir = glob( trailingslashit( wp_upload_dir( null, false )['basedir'] ) . 'rv-saves/u' . $author . '-*' );
+rv_assert( $dir && count( glob( $dir[0] . '/' . $gone . '-*' ) ) === 1, 'the state file exists on disk' );
+wp_delete_post( $gone, true );
+rv_assert( 0 === Saves::usage( $author ) && ! glob( $dir[0] . '/' . $gone . '-*' ), 'deleting a game permanently removes every member save for it' );
+
+// Two games with identical ratings get identical scores whatever the order of voting.
+wp_set_current_user( 1 );
+$raters = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	$raters[] = wp_insert_user( array( 'user_login' => 'rater-' . $i, 'user_pass' => wp_generate_password(), 'user_email' => 'rater' . $i . '@example.com', 'role' => 'subscriber' ) );
+}
+$game_a = wp_insert_post( array( 'post_type' => 'rv_game', 'post_title' => 'Rated A', 'post_status' => 'publish' ) );
+$game_b = wp_insert_post( array( 'post_type' => 'rv_game', 'post_title' => 'Rated B', 'post_status' => 'publish' ) );
+\RetroVault\Ratings::set( $game_a, $raters[0], 5 );
+\RetroVault\Ratings::set( $game_id, $raters[1], 1 ); // moves the site mean between the two identical votes
+\RetroVault\Ratings::set( $game_id, $raters[2], 1 );
+\RetroVault\Ratings::set( $game_b, $raters[0], 5 );
+rv_assert( \RetroVault\Ratings::summary( $game_a )['score'] === \RetroVault\Ratings::summary( $game_b )['score'], 'identical ratings give identical scores regardless of when they were cast' );
+rv_assert( \RetroVault\Ratings::summary( $game_a )['score'] > 0, 'the weighted score is computed' );
+
+// Follower mailings resume from the last recipient, so an unfollow between batches skips nobody.
+$followers = array();
+for ( $i = 0; $i < 43; $i++ ) {
+	$followers[] = wp_insert_user( array( 'user_login' => 'follower-' . $i, 'user_pass' => wp_generate_password(), 'user_email' => 'follower' . $i . '@example.com', 'role' => 'subscriber' ) );
+}
+sort( $followers );
+foreach ( $followers as $uid ) {
+	\RetroVault\Favorites::add( $game_a, $uid );
+}
+$sent = array();
+$catch = static function ( $short, $atts ) use ( &$sent ) {
+	$sent[] = $atts['to'];
+	return true;
+};
+add_filter( 'pre_wp_mail', $catch, 10, 2 );
+$job = array( 'type' => 'version', 'games' => array( $game_a ), 'ref' => 0, 'version' => '9.9', 'after' => 0, 'job' => 'test' );
+\RetroVault\Notifier::send_batch( $job );
+rv_assert( 40 === count( $sent ), 'the first batch mails 40 followers' );
+$queued = null;
+foreach ( (array) _get_cron_array() as $timestamp => $hooks ) {
+	foreach ( (array) ( isset( $hooks[ \RetroVault\Notifier::HOOK ] ) ? $hooks[ \RetroVault\Notifier::HOOK ] : array() ) as $event ) {
+		if ( isset( $event['args'][0]['job'] ) && 'test' === $event['args'][0]['job'] ) {
+			$queued = array( 'time' => $timestamp, 'args' => $event['args'] );
+		}
+	}
+}
+rv_assert( $queued && (int) $queued['args'][0]['after'] === (int) $followers[39] && ! isset( $queued['args'][0]['offset'] ), 'the next batch is scheduled after the last recipient' );
+wp_unschedule_event( $queued['time'], \RetroVault\Notifier::HOOK, $queued['args'] );
+\RetroVault\Favorites::remove( $game_a, $followers[0] ); // the first recipient unfollows between batches
+$sent = array();
+\RetroVault\Notifier::send_batch( array_merge( $job, array( 'after' => $followers[39] ) ) );
+remove_filter( 'pre_wp_mail', $catch, 10 );
+$expected = array_map( static function ( $uid ) { return get_userdata( $uid )->user_email; }, array_slice( $followers, 40 ) );
+sort( $sent );
+sort( $expected );
+rv_assert( $sent === $expected, 'the second batch reaches exactly the remaining followers, none skipped' );
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit, search-engine, player, session, cleanup, unavailable-game saves, rating-mean and mail-batch regressions passed.' );
