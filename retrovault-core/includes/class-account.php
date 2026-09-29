@@ -95,7 +95,7 @@ final class Account {
 		}
 		$input = array(
 			'name'             => isset( $_POST['rv_name'] ) ? sanitize_text_field( wp_unslash( $_POST['rv_name'] ) ) : '',
-			'email'            => isset( $_POST['rv_email'] ) ? sanitize_email( wp_unslash( $_POST['rv_email'] ) ) : '',
+			'email'            => isset( $_POST['rv_email'] ) && is_string( $_POST['rv_email'] ) ? sanitize_email( wp_unslash( $_POST['rv_email'] ) ) : '',
 			// كلمات المرور كما وصلت، كما يقارنها wp_signon عند الدخول (انظر Signup::$password).
 			// phpcs:disable WordPress.Security.ValidatedSanitizedInput -- كلمات مرور لا تُعدَّل.
 			'password'         => isset( $_POST['rv_pass_new'] ) && is_string( $_POST['rv_pass_new'] ) ? $_POST['rv_pass_new'] : '',
@@ -197,15 +197,25 @@ final class Account {
 		}
 		if ( count( $data ) > 1 ) {
 			// عند تغيّر البريد أو كلمة المرور يرسل ووردبريس تنبيهاً للبريد السابق، ويجدّد جلسة هذا الجهاز.
+			// ووردبريس قبل 6.8 يُصدر مع كلمة المرور الجديدة رمز جلسة جديداً ولا يكتبه في $_COOKIE، فيُلتقط من
+			// ملف تعريف الارتباط وهو يُرسل؛ وإلا أُنهيت الجلسة الجديدة نفسها مع «الأجهزة الأخرى» وخرج العضو.
+			$token = wp_get_session_token();
+			$keep  = static function ( $cookie, $expire, $expiration, $user_id, $scheme, $new_token ) use ( &$token ) {
+				if ( is_string( $new_token ) && '' !== $new_token ) {
+					$token = $new_token;
+				}
+			};
+			add_action( 'set_logged_in_cookie', $keep, 10, 6 );
 			$result = wp_update_user( $data );
+			remove_action( 'set_logged_in_cookie', $keep, 10 );
 			if ( is_wp_error( $result ) ) {
 				return array(
 					'errors'   => array( 'form' => wp_strip_all_tags( $result->get_error_message() ) ),
 					'password' => false,
 				);
 			}
-			if ( '' !== $password ) {
-				\WP_Session_Tokens::get_instance( $user->ID )->destroy_others( wp_get_session_token() );
+			if ( '' !== $password && '' !== $token ) {
+				\WP_Session_Tokens::get_instance( $user->ID )->destroy_others( $token );
 			}
 		}
 		return array(

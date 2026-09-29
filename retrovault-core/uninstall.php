@@ -22,10 +22,11 @@ $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}rv_ratings" ); // phpcs:ignor
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}rv_follows" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}rv_events" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}rv_stats_daily" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
-wp_clear_scheduled_hook( 'retrovault_recompute_trends' );
+// wp_clear_scheduled_hook يزيل المهام بلا وسائط فقط؛ رسائل المتابعين مجدولة بوسائط.
+wp_unschedule_hook( 'retrovault_recompute_trends' );
 delete_option( 'retrovault_stats_since' );
 delete_post_meta_by_key( '_rv_trend_score' );
-wp_clear_scheduled_hook( 'retrovault_send_notices' );
+wp_unschedule_hook( 'retrovault_send_notices' );
 
 foreach ( array( '_rv_play_count', '_rv_download_count', '_rv_rating_avg', '_rv_rating_count', '_rv_rating_score' ) as $retrovault_key ) {
 	delete_post_meta_by_key( $retrovault_key );
@@ -60,5 +61,9 @@ if ( $retrovault_page ) {
 delete_option( 'retrovault_account_page' );
 delete_option( 'retrovault_settings' );
 delete_option( 'retrovault_db_version' );
+delete_option( 'retrovault_upgrade_lock' );
+delete_option( 'retrovault_devlog_notice' );
+// أقفال الحفظ السحابي (خيار لكل عضو أثناء الكتابة فقط).
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'rv\\_saves\\_mutex\\_%'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 delete_transient( 'rv_totals' );
 delete_transient( 'rv_rating_mean' );

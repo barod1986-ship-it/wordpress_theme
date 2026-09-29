@@ -9,9 +9,11 @@ defined( 'ABSPATH' ) || exit;
 
 get_header();
 
+// ووردبريس يعدّ ?s= الفارغ بحثاً ويعيد كل المحتوى؛ هنا نعرض نموذج البحث فقط.
+$rvt_empty = '' === trim( (string) get_query_var( 's' ) );
 $rvt_games = array();
 $rvt_posts = array();
-while ( have_posts() ) {
+while ( ! $rvt_empty && have_posts() ) {
 	the_post();
 	if ( 'rv_game' === get_post_type() ) {
 		$rvt_games[] = get_post();
@@ -25,12 +27,23 @@ rewind_posts();
 	<header class="page__head">
 		<h1 class="page__title">
 			<?php
-			/* translators: %s: search query */
-			echo esc_html( sprintf( __( 'نتائج البحث عن «%s»', 'retrovault' ), get_search_query() ) );
+			if ( $rvt_empty ) {
+				esc_html_e( 'ابحث في الموقع', 'retrovault' );
+			} else {
+				/* translators: %s: search query */
+				echo esc_html( sprintf( __( 'نتائج البحث عن «%s»', 'retrovault' ), get_search_query() ) );
+			}
 			?>
 		</h1>
 		<?php rvt_search_form( 'search-form--page' ); ?>
 	</header>
+
+	<?php if ( $rvt_empty ) : ?>
+		<div class="empty">
+			<p class="empty__title"><?php esc_html_e( 'اكتب كلمة للبحث.', 'retrovault' ); ?></p>
+			<p><?php esc_html_e( 'أو تصفّح المكتبة حسب النظام.', 'retrovault' ); ?></p>
+		</div>
+	<?php endif; ?>
 
 	<?php if ( $rvt_games ) : ?>
 		<h2 class="section__title"><?php esc_html_e( 'ألعاب', 'retrovault' ); ?></h2>
@@ -55,14 +68,18 @@ rewind_posts();
 		</ul>
 	<?php endif; ?>
 
-	<?php if ( ! $rvt_games && ! $rvt_posts ) : ?>
+	<?php if ( ! $rvt_empty && ! $rvt_games && ! $rvt_posts ) : ?>
 		<div class="empty">
 			<p class="empty__title"><?php esc_html_e( 'لا نتائج لهذا البحث.', 'retrovault' ); ?></p>
 			<p><?php esc_html_e( 'جرّب كلمة أقصر أو تصفّح المكتبة حسب النظام.', 'retrovault' ); ?></p>
 		</div>
 	<?php endif; ?>
 
-	<?php rvt_pagination(); ?>
+	<?php
+	if ( ! $rvt_empty ) {
+		rvt_pagination();
+	}
+	?>
 </div>
 <?php
 get_footer();

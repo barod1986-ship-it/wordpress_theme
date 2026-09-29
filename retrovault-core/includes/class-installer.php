@@ -35,6 +35,9 @@ final class Installer {
 	}
 
 	public static function deactivate() {
+		// المهام المجدولة لا تعمل بلا الإضافة؛ wp_unschedule_hook يزيل الرسائل المؤجلة بوسائطها كلها.
+		wp_unschedule_hook( Analytics::HOOK );
+		wp_unschedule_hook( Notifier::HOOK );
 		flush_rewrite_rules();
 	}
 

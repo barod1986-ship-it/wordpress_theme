@@ -41,7 +41,7 @@ $rvt_first = $rvt_items ? $rvt_items[0] : null;
 					<span class="mc__count">
 						<?php
 						/* translators: %s: number of games in the menu */
-						echo esc_html( sprintf( __( '%s في 1', 'retrovault' ), number_format_i18n( count( $rvt_items ) ) ) );
+						echo '<bdi>' . esc_html( sprintf( __( '%s في 1', 'retrovault' ), number_format_i18n( count( $rvt_items ) ) ) ) . '</bdi>';
 						?>
 					</span>
 				</p>

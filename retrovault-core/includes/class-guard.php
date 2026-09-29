@@ -126,14 +126,15 @@ final class Guard {
 	}
 
 	/**
-	 * محاولة خاطئة أخرى؛ العدّ يبدأ من جديد بعد 15 دقيقة من آخر محاولة.
+	 * محاولة خاطئة أخرى؛ العدّ يبدأ من جديد بعد انقضاء المدة من آخر محاولة (15 دقيقة افتراضياً).
 	 *
-	 * @param string $scope نوع الحد.
-	 * @param string $who   ما يُحد.
+	 * @param string $scope  نوع الحد.
+	 * @param string $who    ما يُحد.
+	 * @param int    $window مدة العدّ بالثواني.
 	 */
-	public static function fail( $scope, $who ) {
+	public static function fail( $scope, $who, $window = self::WINDOW ) {
 		$key = self::key( $scope, $who );
-		set_transient( $key, (int) get_transient( $key ) + 1, self::WINDOW );
+		set_transient( $key, (int) get_transient( $key ) + 1, max( 1, (int) $window ) );
 	}
 
 	/**

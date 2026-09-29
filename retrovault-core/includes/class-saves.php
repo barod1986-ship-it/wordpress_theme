@@ -486,7 +486,8 @@ final class Saves {
 	 * @return array
 	 */
 	private static function describe_state( $game_id, $entry, $game ) {
-		$shot = '';
+		$entry = array_merge( array( 'core' => '', 'ver' => '', 'size' => 0, 'time' => 0 ), $entry );
+		$shot  = '';
 		if ( ! empty( $entry['shot'] ) ) {
 			$shot = add_query_arg(
 				array(

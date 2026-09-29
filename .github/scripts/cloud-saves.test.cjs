@@ -10,13 +10,13 @@ function hash(bytes) {
   for (const b of bytes) { h ^= b; h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(16) + '-' + bytes.length;
 }
-function session({ local = [1, 2], server = { bytes: [1, 2] }, storage = new Map(), beaconAccepted = true } = {}) {
+function session({ local = [1, 2], server = { bytes: [1, 2] }, storage = new Map(), beaconAccepted = true, rest = 'https://site.test/api/', resume = '' } = {}) {
   let bytes = Uint8Array.from(local);
   const events = {}, emulatorEvents = {}, calls = [], messages = [], states = new Map();
-  const config = { id: 42, user: 7, rest: 'https://site.test/api/', nonce: 'nonce', core: 'fceumm', max: 1e6, sram: true, resume: '', i18n: { savedLocal: 'local saved', saved: 'cloud saved', failed: 'failed', sramChanged: 'conflict', sramRestored: 'restored' } };
+  const config = { id: 42, user: 7, rest, nonce: 'nonce', core: 'fceumm', max: 1e6, sram: true, resume, i18n: { savedLocal: 'local saved', saved: 'cloud saved', failed: 'failed', sramChanged: 'conflict', sramRestored: 'restored', unsupported: 'unsupported', loaded: 'loaded', none: 'none' } };
   const sandbox = {
     Blob, Response, FormData, Uint8Array, Promise, setTimeout, clearTimeout,
-    RVCloud: config, navigator: { onLine: true, sendBeacon(url, body) { calls.push({ type: 'beacon', body }); return beaconAccepted; } },
+    RVCloud: config, navigator: { onLine: true, sendBeacon(url, body) { calls.push({ type: 'beacon', url, body }); return beaconAccepted; } },
     localStorage: { getItem: k => storage.get(k) || null, setItem: (k, v) => storage.set(k, v) },
     document: { addEventListener() {} }, location: { origin: 'https://site.test' }, parent: { postMessage() {} },
     addEventListener: (n, f) => { events[n] = f; }, confirm: () => true,
@@ -37,7 +37,8 @@ function session({ local = [1, 2], server = { bytes: [1, 2] }, storage = new Map
         return Response.json({ hash: hash(server.bytes) });
       }
       if (server.failRead) { return new Response('', { status: 503 }); }
-      if (url.endsWith('/sram/file')) { return new Response(Uint8Array.from(server.bytes), { headers: { 'X-RV-Hash': hash(server.bytes) } }); }
+      if (url.endsWith('/sram/file')) { return new Response(Uint8Array.from(server.bytes), { headers: { 'X-RV-Hash': hash(server.bytes), 'X-RV-Encoding': server.gzip ? 'gzip' : 'raw' } }); }
+      if (url.includes('/save/state')) { return new Response(Uint8Array.from([1]), { headers: { 'X-RV-Encoding': server.gzip ? 'gzip' : 'raw' } }); }
       return Response.json({ exists: !!server.bytes.length, hash: server.bytes.length ? hash(server.bytes) : '' });
     }
   };
@@ -102,4 +103,41 @@ test('a real two-device conflict asks before replacing the local save', async ()
   const a = session({ local: [7, 8], server: { bytes: [5, 6] }, storage });
   let prompted = false; a.sandbox.confirm = () => { prompted = true; return false; };
   await a.start(); assert.equal(prompted, true); assert.deepEqual(a.server.bytes, [7, 8]);
+});
+test('a device with no recorded base asks before the account save replaces its progress', async () => {
+  // A guest played here before signing in, or another account uses this browser: neither side is known to be newer.
+  const keep = session({ local: [7, 8], server: { bytes: [5, 6] } });
+  let prompted = false; keep.sandbox.confirm = () => { prompted = true; return false; };
+  await keep.start();
+  assert.equal(prompted, true); assert.deepEqual(keep.server.bytes, [7, 8]); assert.deepEqual(keep.getLocal(), [7, 8]);
+  const restore = session({ local: [7, 8], server: { bytes: [5, 6] } });
+  restore.sandbox.confirm = () => true;
+  await restore.start();
+  assert.deepEqual(restore.getLocal(), [5, 6]); assert.equal(restore.base(), hash([5, 6]));
+  const fresh = session({ local: [], server: { bytes: [5, 6] } });
+  fresh.sandbox.confirm = () => { throw new Error('a device without progress must not prompt'); };
+  await fresh.start(); assert.deepEqual(fresh.getLocal(), [5, 6]);
+});
+test('resume slots and the unload beacon reach the server under plain permalinks', async () => {
+  const rest = 'https://site.test/?rest_route=/retrovault/v1/';
+  const a = session({ rest, resume: 'abcdefghij123456' }); await a.start();
+  await new Promise(r => setTimeout(r, 400));
+  const slot = a.calls.find(c => c.type === 'GET' && c.url.includes('slot='));
+  assert.ok(slot, 'the resume slot is requested');
+  assert.equal(slot.url, rest + 'games/42/save/state&slot=abcdefghij123456');
+  a.setLocal([9, 8]); a.events.pagehide(); a.flush();
+  assert.equal(a.calls.at(-1).url, rest + 'games/42/sram&_wpnonce=nonce');
+  const pretty = session({ resume: 'abcdefghij123456' }); await pretty.start();
+  await new Promise(r => setTimeout(r, 400));
+  assert.ok(pretty.calls.some(c => c.url === 'https://site.test/api/games/42/save/state?slot=abcdefghij123456'));
+});
+test('a gzip save on a browser without DecompressionStream explains itself and stops retrying', async () => {
+  const a = session({ local: [7, 8], server: { bytes: [5, 6], gzip: true } });
+  await a.start();
+  assert.ok(a.messages.includes('unsupported')); assert.deepEqual(a.getLocal(), [7, 8]);
+  const count = a.calls.length; a.setLocal([7, 9]); await a.flush();
+  assert.equal(a.calls.length, count, 'no further automatic writes');
+  const b = session({ server: { bytes: [1, 2], gzip: true } }); await b.start();
+  b.sandbox.EJS_onLoadState(); await new Promise(r => setTimeout(r, 50));
+  assert.equal(b.messages.at(-1), 'unsupported');
 });

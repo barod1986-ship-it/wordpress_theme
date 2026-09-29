@@ -16,6 +16,18 @@ while ( have_posts() ) :
 	if ( ! $rvt_game ) {
 		continue;
 	}
+	if ( post_password_required() ) {
+		// لعبة محمية بكلمة مرور: لا مشغّل ولا لقطات ولا تنزيل ولا تقييم قبل إدخالها (المشغّل والملف يرفضانها أيضاً).
+		?>
+		<article id="post-<?php the_ID(); ?>" <?php post_class( 'shell page game--locked' ); ?>>
+			<header class="page__head">
+				<h1 class="page__title"><?php the_title(); ?></h1>
+			</header>
+			<div class="entry"><?php echo get_the_password_form(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- نموذج ووردبريس. ?></div>
+		</article>
+		<?php
+		continue;
+	}
 	$rvt_sys      = $rvt_game['system'];
 	$rvt_color    = $rvt_sys ? $rvt_sys['color'] : '#5a5864';
 	$rvt_controls = ( $rvt_sys && $rvt_sys['key'] ) ? rv_get_controls( $rvt_sys['key'] ) : array();

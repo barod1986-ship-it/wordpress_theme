@@ -178,7 +178,15 @@ final class Pwa {
 			'dataPath' => $data_path,
 			'uploads'  => trailingslashit( (string) wp_parse_url( $uploads['baseurl'], PHP_URL_PATH ) ),
 			'romExt'   => Uploads::extensions(),
-			'skip'     => array_values( array_filter( $skip ) ),
+			// بلا روابط دائمة مسار REST هو جذر الموقع (?rest_route=)؛ لو استُثني لتوقف عامل الخدمة عن كل الصفحات.
+			'skip'     => array_values(
+				array_filter(
+					$skip,
+					static function ( $path ) {
+						return '' !== $path && '/' !== $path && self::scope() !== $path;
+					}
+				)
+			),
 			'maxPages' => 60,
 			'maxShell' => 300,
 		);

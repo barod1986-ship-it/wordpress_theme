@@ -141,6 +141,11 @@ expect 200 '/?rv_offline=1'
 expect 302 '/?rv_random=1'
 expect 200 /feed/
 expect 200 "/wp-json/retrovault/v1/games/$GAME/rating"
+# ?s= الفارغ يعدّه ووردبريس بحثاً ويعيد كل المحتوى؛ القالب يعرض نموذج البحث فقط.
+expect 200 '/?s='
+if grep -qE 'cart-grid|search-list' "$TMP/body"; then fail "an empty search lists the whole site"; else echo "ok an empty search lists nothing"; fi
+# متغيرا التصنيف كمصفوفة: الرد نفسه للمصطلح الخاطئ، وبلا تحذير PHP (يُفحص السجل آخر الاختبار).
+check "an array taxonomy parameter answers like a wrong term" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/games/?system=no-such-system")" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/games/?system%5B%5D=x&genre%5B%5D=y")"
 
 echo "== Fonts and preloads"
 # كل خط يُطلب مبكراً (preload) هو الرابط نفسه في fonts.css، وإلا نزّله المتصفح مرتين. والملفات موجودة.
@@ -268,6 +273,12 @@ else
 	echo "ok game file is hidden from the public media API"
 fi
 wp post update "$GAME" --post_password=rom-test --quiet
+curl -s -o "$TMP/locked.html" "$BASE/games/pixel-quest/"
+if grep -q 'post-password' "$TMP/locked.html" && ! grep -qE 'data-rv-player|data-rating-box|/download/|game-shots|rv-player__start' "$TMP/locked.html"; then
+	echo "ok a password-protected game page shows only the password form"
+else
+	fail "a password-protected game page exposes the player, rating, screenshots or download"
+fi
 check "password-protected ROM without the password" 403 "$(status -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
 check "player is told the game needs its password" password "$(reason -b "$TMP/player.jar" "${xhr[@]}" "$rom")"
 check "password-protected download" 403 "$(status "$BASE/games/pixel-quest/download/")"
@@ -378,6 +389,15 @@ docker exec "$WP" sh -c 'cp .htaccess /tmp/htaccess.bak && { printf "RewriteEngi
 check "Site Health: a server rule that hides game files from WordPress" critical "$(health)"
 docker exec "$WP" sh -c 'cp /tmp/htaccess.bak .htaccess'
 check "Site Health: restored" good "$(health)"
+
+echo "== Plain permalinks"
+# بلا روابط دائمة يكون مسار REST هو جذر الموقع؛ لو دخل قائمة استثناءات عامل الخدمة لتوقف عن كل الصفحات.
+wp rewrite structure '' --quiet
+curl -s -o "$TMP/sw.js" "$BASE/?rv_sw=1"
+node -e 'const m = require("fs").readFileSync(process.argv[1], "utf8").match(/^self\.RV_SW = (.*);$/m); const c = JSON.parse(m[1]); if (c.skip.some(p => p === "/" || p === c.scope || p.length < 2)) { console.error("skip list:", c.skip); process.exit(1); } console.log("ok the service worker skip list has no site-root entry:", c.skip.join(" "));' "$TMP/sw.js" || fail "the service worker would skip every page under plain permalinks"
+expect 200 "/?rv_game=pixel-quest"
+wp rewrite structure '/%postname%/' --quiet
+expect 200 /games/pixel-quest/
 
 echo "== Regression tests"
 docker cp .github/scripts/regression.php "$WP:/var/www/html/wp-content/regression.php"

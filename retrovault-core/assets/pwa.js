@@ -12,7 +12,8 @@
 			return Promise.all(keys.filter(function (k) { return k.indexOf('rv-pages') === 0; }).map(function (k) { return caches.delete(k); }));
 		}) : Promise.resolve();
 	}
-	if (C.enabled === false) {
+	/* في صفحات القالب تصل الإعدادات عبر wp_localize_script الذي يحوّل false إلى نص فارغ. */
+	if (!C.enabled || C.enabled === '0' || C.enabled === 'false') {
 		if (navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).searchParams.has('rv_sw')) {
 			navigator.serviceWorker.controller.postMessage({ type: 'rv:disable' });
 		}

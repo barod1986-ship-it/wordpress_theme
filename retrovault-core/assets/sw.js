@@ -59,15 +59,27 @@
 
 	function skipped(url) {
 		for (var i = 0; i < C.skip.length; i++) {
-			if (url.pathname.indexOf(C.skip[i]) === 0) {
+			/* بلا روابط دائمة يكون مسار REST هو جذر الموقع نفسه؛ لو استُثني لتعطّل كل شيء. */
+			var prefix = C.skip[i];
+			if (prefix && prefix.length > 1 && prefix !== C.scope && url.pathname.indexOf(prefix) === 0) {
 				return true;
 			}
 		}
-		return /(^|&)(rv_random|rv_unsub|rv_sw|rv_manifest|rv_download|preview)=/.test(url.search.slice(1)) || /\/download\/?$/.test(url.pathname);
+		return /(^|&)(rv_random|rv_unsub|rv_sw|rv_manifest|rv_download|preview|rest_route)=/.test(url.search.slice(1)) || /\/download\/?$/.test(url.pathname);
 	}
 
 	function cacheable(res) {
 		return res && (res.ok || res.type === 'opaque');
+	}
+
+	/* وسوم <script> و<link> إلى CDN المحاكي طلبات no-cors: ردّها «معتم» يخفي رمز الحالة، فيُحفظ خطأ 404
+	 * كأنه الملف ويُعدّ اللعبة جاهزة بدون إنترنت. طلب cors للرابط نفسه يكشف الحالة (الـ CDN يسمح به)،
+	 * وإن رفضه خادم آخر عدنا إلى الطلب الأصلي. */
+	function fetchGame(req) {
+		if (req.mode !== 'no-cors' || new URL(req.url).origin === self.location.origin) {
+			return fetch(req);
+		}
+		return fetch(req.url, { mode: 'cors', credentials: 'omit' }).catch(function () { return fetch(req); });
 	}
 
 	function trim(name, max) {
@@ -130,7 +142,7 @@
 					return saved(cache, null, true);
 				});
 			}
-			return fetch(req).then(function (res) {
+			return fetchGame(req).then(function (res) {
 				if (!cacheable(res)) {
 					return denied(cache, res);
 				}

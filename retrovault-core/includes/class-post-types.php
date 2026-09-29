@@ -317,8 +317,8 @@ final class Post_Types {
 			return;
 		}
 		$key   = isset( $_POST['rv_system_key'] ) ? self::sanitize_system_key( sanitize_text_field( wp_unslash( $_POST['rv_system_key'] ) ) ) : '';
-		$color = isset( $_POST['rv_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['rv_color'] ) ) : '';
-		$bios  = isset( $_POST['rv_bios_url'] ) ? esc_url_raw( wp_unslash( $_POST['rv_bios_url'] ) ) : '';
+		$color = isset( $_POST['rv_color'] ) && is_string( $_POST['rv_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['rv_color'] ) ) : '';
+		$bios  = isset( $_POST['rv_bios_url'] ) && is_string( $_POST['rv_bios_url'] ) ? esc_url_raw( wp_unslash( $_POST['rv_bios_url'] ) ) : '';
 
 		foreach ( array(
 			'rv_system_key' => $key,

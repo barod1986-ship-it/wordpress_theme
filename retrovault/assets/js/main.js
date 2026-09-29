@@ -52,6 +52,20 @@
 		return h;
 	}
 
+	/* بلا روابط دائمة يحمل رابط REST ?rest_route= أصلاً، فتُلحق المعاملات بـ & لا بـ ? */
+	function restUrl(path, query) {
+		var url = RVT.rest + path;
+		return query ? url + (url.indexOf('?') === -1 ? '?' : '&') + query : url;
+	}
+
+	/* رد REST كـ JSON؛ وإن جاءت صفحة HTML (خطأ خادم أو صيانة) فرسالة مفهومة بدل خطأ التحليل */
+	function parseJson(res) {
+		return res.json().catch(function () { throw new Error(i18n.error || ''); }).then(function (json) {
+			if (!res.ok) { throw json; }
+			return json;
+		});
+	}
+
 	function formatAverage(avg) {
 		return Number(avg).toFixed(1).replace('.', RVT.decimal || '.');
 	}
@@ -323,22 +337,19 @@
 			if (clearBtn) { clearBtn.hidden = !data.user; }
 		};
 
+		var pending = null;
 		var send = function (method, rating) {
-			if (busy) { return; }
+			/* اختيار آخر أثناء الحفظ يُرسل بعده بدل إهماله (وإلا عادت النجوم إلى القيمة الأولى) */
+			if (busy) { pending = [method, rating]; return; }
 			busy = true;
 			if (msg) { msg.textContent = i18n.saving || ''; }
-			fetch(RVT.rest + 'games/' + gameId + '/rating', {
+			fetch(restUrl('games/' + gameId + '/rating'), {
 				method: method,
 				credentials: 'same-origin',
 				headers: restHeaders(true),
 				body: rating ? JSON.stringify({ rating: rating }) : undefined
 			})
-				.then(function (res) {
-					return res.json().then(function (json) {
-						if (!res.ok) { throw json; }
-						return json;
-					});
-				})
+				.then(parseJson)
 				.then(function (data) {
 					render(data);
 					if (msg) { msg.textContent = method === 'DELETE' ? (i18n.removed || '') : (i18n.saved || ''); }
@@ -346,7 +357,14 @@
 				.catch(function (err) {
 					if (msg) { msg.textContent = (err && err.message) ? err.message : (i18n.error || ''); }
 				})
-				.then(function () { busy = false; });
+				.then(function () {
+					busy = false;
+					if (pending) {
+						var next = pending;
+						pending = null;
+						send(next[0], next[1]);
+					}
+				});
 		};
 
 		box.addEventListener('change', function (e) {
@@ -361,17 +379,12 @@
 	});
 
 	/* ---------- طلب REST عام للأعضاء ---------- */
-	function member(method, path) {
-		return fetch(RVT.rest + path, {
+	function member(method, path, query) {
+		return fetch(restUrl(path, query), {
 			method: method,
 			credentials: 'same-origin',
 			headers: restHeaders()
-		}).then(function (res) {
-			return res.json().then(function (json) {
-				if (!res.ok) { throw json; }
-				return json;
-			});
-		});
+		}).then(parseJson);
 	}
 
 	/* ---------- المفضلة ---------- */
@@ -402,7 +415,7 @@
 		var slot = btn.getAttribute('data-slot') || '';
 		if (!window.confirm(slot ? i18n.delSlot : i18n.delConfirm)) { return; }
 		btn.disabled = true;
-		member('DELETE', 'games/' + btn.getAttribute('data-game') + '/save' + (slot ? '?slot=' + encodeURIComponent(slot) : ''))
+		member('DELETE', 'games/' + btn.getAttribute('data-game') + '/save', slot ? 'slot=' + encodeURIComponent(slot) : '')
 			.then(function (data) {
 				var card = btn.closest('[data-save-card]');
 				if (slot) {
@@ -431,13 +444,13 @@
 		var box = e.target.closest('[data-notify-toggle]');
 		if (!box) { return; }
 		box.disabled = true;
-		fetch(RVT.rest + 'me/notify', {
+		fetch(restUrl('me/notify'), {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: restHeaders(true),
 			body: JSON.stringify({ email: box.checked })
 		})
-			.then(function (res) { return res.json().then(function (j) { if (!res.ok) { throw j; } return j; }); })
+			.then(parseJson)
 			.then(function (data) {
 				box.checked = !!data.email;
 				toast(data.email ? i18n.notifyOn : i18n.notifyOff);

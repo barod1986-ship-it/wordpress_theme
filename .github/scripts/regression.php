@@ -345,4 +345,56 @@ add_filter( 'home_url', $https );
 $mixed = \RetroVault\Roms::check_link( 'http://files.example.com/game.nes' );
 remove_filter( 'home_url', $https );
 rv_assert( is_array( $mixed ) && 'error' === $mixed[0], 'an http direct link on an https site is flagged before visitors hit it' );
-WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit, search-engine and player regressions passed.' );
+// 1.16.2: changing the password from "My Account" keeps this browser signed in. WordPress before 6.8
+// destroys the current session and issues a fresh token while saving the password; simulate that here.
+$sid = wp_insert_user( array( 'user_login' => 'session-regression', 'user_pass' => 'old-pass-123', 'user_email' => 'session@example.com', 'role' => 'subscriber' ) );
+rv_assert( ! is_wp_error( $sid ), 'session fixture created' );
+$manager = WP_Session_Tokens::get_instance( $sid );
+$old     = $manager->create( time() + DAY_IN_SECONDS );
+$other   = $manager->create( time() + DAY_IN_SECONDS );
+$fresh   = '';
+$_COOKIE[ LOGGED_IN_COOKIE ] = wp_generate_auth_cookie( $sid, time() + DAY_IN_SECONDS, 'logged_in', $old );
+rv_assert( wp_get_session_token() === $old, 'the browser session is the old token' );
+$legacy = static function ( $user_id ) use ( &$fresh, $sid, $manager, $old ) {
+	if ( (int) $user_id !== (int) $sid ) { return; }
+	$manager->destroy( $old );
+	$fresh = $manager->create( time() + DAY_IN_SECONDS );
+	do_action( 'set_logged_in_cookie', 'cookie', 0, 0, $user_id, 'logged_in', $fresh );
+};
+add_action( 'profile_update', $legacy );
+$saved = \RetroVault\Account::update_settings( get_userdata( $sid ), array( 'name' => 'Session Tester', 'email' => 'session@example.com', 'password' => 'new-pass-456', 'current_password' => 'old-pass-123' ) );
+remove_action( 'profile_update', $legacy );
+unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
+rv_assert( empty( $saved['errors'] ) && $saved['password'], 'the password change is accepted' );
+rv_assert( '' !== $fresh && $manager->verify( $fresh ), 'the session WordPress issued with the new password survives' );
+rv_assert( ! $manager->verify( $other ) && ! $manager->verify( $old ), 'other devices are signed out' );
+rv_assert( wp_check_password( 'new-pass-456', get_userdata( $sid )->user_pass, $sid ), 'the new password is stored' );
+
+// Sign-up counting lasts an hour, not the 15-minute login window.
+global $wpdb;
+\RetroVault\Guard::fail( 'signup', '', HOUR_IN_SECONDS );
+$timeout = (int) $wpdb->get_var( "SELECT MAX(option_value) FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_timeout\\_rv\\_guard\\_%'" );
+rv_assert( $timeout - time() > 3500, 'instant sign-ups are counted per hour' );
+
+// Taxonomy query vars may arrive as arrays; the library filters ignore them instead of warning.
+$GLOBALS['wp_query']->set( 'system', array( 'nes' ) );
+$GLOBALS['wp_query']->set( 'genre', array( 'rpg' ) );
+$filters = \RetroVault\Query::filters();
+$GLOBALS['wp_query']->set( 'system', '' );
+$GLOBALS['wp_query']->set( 'genre', '' );
+rv_assert( '' === $filters['system'] && '' === $filters['genre'], 'array taxonomy parameters are ignored' );
+
+// Cloud-save entries written before core/ver were recorded still describe themselves.
+$legacy_saves = array( $game_id => array( 'states' => array( array( 'token' => 'abcdefghij123456', 'time' => time() - 60, 'size' => 10, 'enc' => 'raw', 'shot' => '' ) ), 'sram' => null ) );
+update_user_meta( $author, '_rv_saves', $legacy_saves );
+$info = \RetroVault\Saves::info( $author, $game_id );
+rv_assert( is_array( $info ) && 'abcdefghij123456' === $info['slot'] && '' === $info['version'] && false === $info['outdated'], 'a save from before 1.13 is listed without warnings' );
+delete_user_meta( $author, '_rv_saves' );
+
+// Deactivation and uninstall clear scheduled follower mailings, which carry arguments.
+wp_schedule_single_event( time() + HOUR_IN_SECONDS, \RetroVault\Notifier::HOOK, array( array( 'post' => 1 ) ) );
+rv_assert( false !== wp_next_scheduled( \RetroVault\Notifier::HOOK, array( array( 'post' => 1 ) ) ), 'mailing scheduled' );
+\RetroVault\Installer::deactivate();
+rv_assert( false === wp_next_scheduled( \RetroVault\Notifier::HOOK, array( array( 'post' => 1 ) ) ) && false === wp_next_scheduled( \RetroVault\Analytics::HOOK ), 'deactivation removes scheduled mailings and the hourly trends job' );
+\RetroVault\Analytics::schedule();
+WP_CLI::success( 'Security, REST, ROM authorization, save-persistence, sign-up, account, email, stats, limit, search-engine, player, session and cleanup regressions passed.' );
